@@ -477,7 +477,7 @@ function ListingCard({ listing }: { listing: Listing }) {
           <div className="flex items-center gap-2">
             <img
               src={listing.profiles?.profile_photo || '/default-avatar.png'}
-              alt={listing.profiles?.full_name}
+              alt={listing.profiles?.full_name || 'Kullanıcı'}
               className="w-6 h-6 rounded-full object-cover"
             />
             <span className="text-xs text-slate-500">
