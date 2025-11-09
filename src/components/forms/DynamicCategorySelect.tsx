@@ -3,14 +3,21 @@
 import { useEffect, useState } from 'react'
 import { getCategories, getMainCategories, getSubCategories } from '@/lib/getCategories'
 
+// ✅ Type tanımlamaları
+interface Category {
+  id: number
+  name: string
+  slug?: string  // ✅ Optional yapıldı
+}
+
 interface Props {
   defaultCategorySlug: 'sale' | 'help' | 'gift'
 }
 
 export default function DynamicCategorySelect({ defaultCategorySlug }: Props) {
-  const [categories, setCategories] = useState<any[]>([])
-  const [mainCategories, setMainCategories] = useState<any[]>([])
-  const [subCategories, setSubCategories] = useState<any[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [mainCategories, setMainCategories] = useState<Category[]>([])
+  const [subCategories, setSubCategories] = useState<Category[]>([])
 
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null)
   const [selectedMain, setSelectedMain] = useState<number | null>(null)
@@ -22,7 +29,11 @@ export default function DynamicCategorySelect({ defaultCategorySlug }: Props) {
       const cats = await getCategories()
       setCategories(cats)
 
-      const found = cats.find((c) => c.slug === defaultCategorySlug)
+      // ✅ Slug kontrolünü güvenli hale getir
+      const found = cats.find((c) => 
+        c.slug === defaultCategorySlug || 
+        c.name?.toLowerCase() === defaultCategorySlug?.toLowerCase()
+      )
       if (found) {
         setSelectedCategory(found.id)
         // Kategori bulunur bulunmaz ana kategorileri getir
@@ -48,9 +59,6 @@ export default function DynamicCategorySelect({ defaultCategorySlug }: Props) {
 
     loadSubs()
   }, [selectedMain])
-
-  // 🔹 Boş state’leri sıfırlamak isteyen sayfalar için bu değerleri dışarı da aktarabiliriz (ileride insert için)
-  //   ama şimdilik form içi local kullanım yeterli
 
   return (
     <div className="space-y-3">
