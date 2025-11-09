@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       to: RECEIVER,
       subject: subject,
       text: text,
-      reply_to: body.email || 'noreply@wishofbridge.com',
+      replyTo: body.email || 'noreply@wishofbridge.com',
     })
 
     if (error) {
