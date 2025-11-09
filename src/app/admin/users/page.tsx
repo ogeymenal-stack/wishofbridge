@@ -1,0 +1,450 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import {
+  Loader2,
+  Search,
+  ShieldCheck,
+  RefreshCw,
+  Download,
+  Users,
+  Ban,
+  Clock,
+  UserPlus,
+  UserX,
+  UserCheck,
+  ChevronLeft,
+  ChevronRight,
+  ShieldAlert,
+  Shield,
+} from 'lucide-react'
+import UserDetailModal from '@/components/admin/UserDetailModal'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const PAGE_SIZE = 20
+
+export default function AdminUsersPage() {
+  const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [authorized, setAuthorized] = useState<boolean | null>(null)
+
+  // 🔐 Yalnızca admin veya moderator girebilir
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await supabase.auth.getUser()
+      const user = data?.user
+      if (!user) {
+        window.location.href = '/'
+        return
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (!profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
+        alert('Bu sayfa yalnızca yöneticiler içindir.')
+        window.location.href = '/'
+        return
+      }
+
+      setAuthorized(true)
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (authorized) {
+      loadUsers()
+      // Realtime dinleyici (isteğe bağlı)
+      const channel = supabase
+        .channel('profiles-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () =>
+          loadUsers()
+        )
+        .subscribe()
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+  }, [authorized])
+
+  // 🚀 Kullanıcıları yükle
+  const loadUsers = async () => {
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(
+        'id, email, full_name, username, status, role, is_banned, created_at, verification_badges'
+      )
+      .order('created_at', { ascending: false })
+    if (!error && data) setUsers(data)
+    setLoading(false)
+  }
+
+  // 🧮 İstatistik
+  const stats = useMemo(() => {
+    const total = users.length
+    const active = users.filter((u) => u.status === 'active' && !u.is_banned).length
+    const suspended = users.filter((u) => u.status === 'suspended').length
+    const pending = users.filter((u) => u.status === 'pending').length
+    const admins = users.filter((u) => u.role === 'admin').length
+    return { total, active, suspended, pending, admins }
+  }, [users])
+
+  // 🔍 Filtreleme
+  const filtered = useMemo(() => {
+    let f = [...users]
+    if (searchTerm) {
+      f = f.filter(
+        (u) =>
+          u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          u.username?.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    if (statusFilter !== 'all') f = f.filter((u) => u.status === statusFilter)
+    if (roleFilter !== 'all') f = f.filter((u) => u.role === roleFilter)
+    return f
+  }, [users, searchTerm, statusFilter, roleFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // 🔄 Filtre değişince sıfırla
+  useEffect(() => setPage(1), [searchTerm, statusFilter, roleFilter])
+
+  // ⚙️ Rol değiştirme
+  const handleRoleChange = async (id: string, newRole: string) => {
+    setActionLoading(true)
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id)
+    if (error) alert('Rol değiştirilemedi: ' + error.message)
+    else {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)))
+    }
+    setActionLoading(false)
+  }
+
+  // ⛔ Ban işlemi
+  const handleBan = async (id: string, current: boolean) => {
+    setActionLoading(true)
+    const { error } = await supabase.from('profiles').update({ is_banned: !current }).eq('id', id)
+    if (error) alert('İşlem hatası: ' + error.message)
+    else {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, is_banned: !current } : u)))
+    }
+    setActionLoading(false)
+  }
+
+  // 🧩 Askıya alma
+  const handleSuspend = async (id: string, newStatus: string) => {
+    setActionLoading(true)
+    const { error } = await supabase.from('profiles').update({ status: newStatus }).eq('id', id)
+    if (error) alert('Hata: ' + error.message)
+    else {
+      const updated = users.map((u) => (u.id === id ? { ...u, status: newStatus } : u))
+      setUsers(updated)
+    }
+    setActionLoading(false)
+  }
+
+  // ✅ Doğrulama
+  const handleVerify = async (id: string) => {
+    setActionLoading(true)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ verification_badges: ['Doğrulanmış'] })
+      .eq('id', id)
+    if (error) alert('Hata: ' + error.message)
+    else {
+      const updated = users.map((u) =>
+        u.id === id ? { ...u, verification_badges: ['Doğrulanmış'] } : u
+      )
+      setUsers(updated)
+    }
+    setActionLoading(false)
+  }
+
+  const exportCSV = () => {
+    if (filtered.length === 0) return alert('Aktarılacak veri yok.')
+    const headers = ['ID', 'Ad Soyad', 'E-posta', 'Kullanıcı Adı', 'Durum', 'Rol', 'Ban', 'Kayıt']
+    const rows = filtered.map((u) => [
+      u.id,
+      u.full_name,
+      u.email,
+      u.username,
+      u.status,
+      u.role,
+      u.is_banned ? 'Evet' : 'Hayır',
+      new Date(u.created_at).toLocaleDateString('tr-TR'),
+    ])
+    const csv =
+      'data:text/csv;charset=utf-8,' + [headers, ...rows].map((r) => r.join(',')).join('\n')
+    const link = document.createElement('a')
+    link.setAttribute('href', encodeURI(csv))
+    link.setAttribute('download', 'kullanicilar.csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  if (authorized === null)
+    return (
+      <div className="flex justify-center items-center h-96 text-wb-olive">
+        <ShieldAlert className="animate-pulse mr-2" /> Yetki kontrolü yapılıyor...
+      </div>
+    )
+
+  if (loading)
+    return (
+      <div className="flex justify-center items-center h-96 text-wb-olive">
+        <Loader2 className="animate-spin mr-2" /> Kullanıcılar yükleniyor...
+      </div>
+    )
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-wb-olive mb-6 flex items-center gap-2">
+        <Users size={22} /> Tüm Kullanıcılar
+      </h1>
+
+      {/* Sayaçlar */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <StatCard icon={Users} label="Aktif" value={stats.active} color="text-green-600" />
+        <StatCard icon={Ban} label="Askıya" value={stats.suspended} color="text-red-600" />
+        <StatCard icon={Clock} label="Beklemede" value={stats.pending} color="text-yellow-600" />
+        <StatCard icon={Shield} label="Admin" value={stats.admins} color="text-blue-600" />
+        <StatCard icon={UserPlus} label="Toplam" value={stats.total} color="text-wb-olive" />
+      </div>
+
+      {/* Filtreler */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Kullanıcı ara..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-8 pr-3 py-2 border rounded-xl text-sm focus:ring-wb-olive focus:border-wb-olive"
+            />
+          </div>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="border rounded-xl px-3 py-2 text-sm focus:ring-wb-olive focus:border-wb-olive"
+          >
+            <option value="all">Tüm Durumlar</option>
+            <option value="active">Aktif</option>
+            <option value="suspended">Askıya Alınmış</option>
+            <option value="pending">Beklemede</option>
+          </select>
+
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="border rounded-xl px-3 py-2 text-sm focus:ring-wb-olive focus:border-wb-olive"
+          >
+            <option value="all">Tüm Roller</option>
+            <option value="user">Kullanıcı</option>
+            <option value="moderator">Moderatör</option>
+            <option value="admin">Admin</option>
+          </select>
+
+          <button
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-1 bg-wb-olive text-white px-3 py-2 rounded-xl text-sm hover:bg-wb-green transition"
+          >
+            <RefreshCw size={14} /> Yenile
+          </button>
+        </div>
+
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-1 bg-wb-green text-white px-3 py-2 rounded-xl text-sm hover:bg-wb-olive transition"
+        >
+          <Download size={14} /> CSV Aktar
+        </button>
+      </div>
+
+      {/* Tablo */}
+      {pageData.length === 0 ? (
+        <p className="text-gray-500 text-center mt-10">Kullanıcı bulunamadı.</p>
+      ) : (
+        <>
+          <div className="overflow-x-auto border rounded-xl bg-white shadow-sm">
+            <table className="min-w-full text-sm">
+              <thead className="bg-wb-cream text-wb-olive uppercase text-xs">
+                <tr>
+                  <th className="px-4 py-3 text-left">Ad Soyad</th>
+                  <th className="px-4 py-3 text-left">E-posta</th>
+                  <th className="px-4 py-3 text-left">Kullanıcı Adı</th>
+                  <th className="px-4 py-3 text-center">Durum</th>
+                  <th className="px-4 py-3 text-center">Rol</th>
+                  <th className="px-4 py-3 text-center">Ban</th>
+                  <th className="px-4 py-3 text-center">Kayıt</th>
+                  <th className="px-4 py-3 text-center">İşlem</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pageData.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setSelectedUserId(u.id)}
+                        className="text-wb-olive hover:underline"
+                      >
+                        {u.full_name || '—'}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">{u.email}</td>
+                    <td className="px-4 py-3">@{u.username}</td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadge status={u.status} />
+                    </td>
+                    <td className="px-4 py-3 text-center capitalize">{u.role || 'user'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {u.is_banned ? (
+                        <span className="text-red-600 font-semibold">⛔</span>
+                      ) : (
+                        <span className="text-green-600 font-semibold">✔</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {new Date(u.created_at).toLocaleDateString('tr-TR')}
+                    </td>
+                    <td className="px-4 py-3 text-center space-x-2">
+                      {actionLoading ? (
+                        <Loader2 className="animate-spin inline text-wb-olive" size={14} />
+                      ) : (
+                        <>
+                          <button
+                            onClick={() =>
+                              handleSuspend(u.id, u.status === 'suspended' ? 'active' : 'suspended')
+                            }
+                            className="inline-flex items-center text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                          >
+                            <UserX size={12} className="mr-1" />
+                            {u.status === 'suspended' ? 'Aktif Et' : 'Askıya Al'}
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleBan(u.id, u.is_banned)
+                            }
+                            className="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                          >
+                            <Ban size={12} className="mr-1" />
+                            {u.is_banned ? 'Ban Kaldır' : 'Banla'}
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleRoleChange(
+                                u.id,
+                                u.role === 'user'
+                                  ? 'moderator'
+                                  : u.role === 'moderator'
+                                  ? 'admin'
+                                  : 'user'
+                              )
+                            }
+                            className="inline-flex items-center text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
+                          >
+                            <ShieldCheck size={12} className="mr-1" />
+                            Rol Değiştir
+                          </button>
+
+                          {!u.verification_badges?.includes('Doğrulanmış') && (
+                            <button
+                              onClick={() => handleVerify(u.id)}
+                              className="inline-flex items-center text-xs px-2 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200"
+                            >
+                              <UserCheck size={12} className="mr-1" />
+                              Doğrula
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Sayfalama */}
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-xs text-gray-500">
+              {filtered.length} kayıttan {(page - 1) * PAGE_SIZE + 1}–
+              {Math.min(page * PAGE_SIZE, filtered.length)} arası gösteriliyor
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded border text-sm disabled:opacity-50 flex items-center gap-1"
+              >
+                <ChevronLeft size={14} /> Geri
+              </button>
+              <span className="text-sm">
+                {page} / {totalPages}
+              </span>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded border text-sm disabled:opacity-50 flex items-center gap-1"
+              >
+                İleri <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Detay Modal */}
+      {selectedUserId && (
+        <UserDetailModal userId={selectedUserId} onClose={() => setSelectedUserId(null)} />
+      )}
+    </div>
+  )
+}
+
+function StatCard({ icon: Icon, label, value, color }: any) {
+  return (
+    <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+      <div>
+        <p className="text-sm text-gray-500">{label}</p>
+        <h2 className="text-xl font-bold text-wb-olive">{value}</h2>
+      </div>
+      <Icon className={`${color}`} size={24} />
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: any = {
+    active: 'bg-green-100 text-green-700',
+    suspended: 'bg-red-100 text-red-700',
+    pending: 'bg-yellow-100 text-yellow-700',
+  }
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs ${map[status] || 'bg-gray-100 text-gray-600'}`}>
+      {status || '—'}
+    </span>
+  )
+}

@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🌸 Global pastel tema renkleri */
+:root {
+  --wb-olive: #7A8B6E;
+  --wb-green: #A6BBA6;
+  --wb-lavender: #C3A4FF;
+  --wb-cream: #F4E9D8;
+  --wb-white: #F7F7F2;
+  --wb-text: #1f2937;
+}
+
+/* 🌿 Global temalar */
+html,
+body {
+  height: 100%;
+  background-color: var(--wb-white);
+  color: var(--wb-text);
+  font-family: 'Inter', sans-serif;
+}
+
+/* 🪶 Kart ve yüzey tonları */
+.pastel-card {
+  @apply bg-wb-cream/70 backdrop-blur rounded-2xl shadow-soft border border-wb-olive/20;
+}
+
+/* 🔗 Linkler */
+.link-soft {
+  @apply text-wb-olive hover:text-wb-green underline-offset-4 hover:underline transition-colors;
+}
+
+/* 🌼 Navigasyon hover efekti */
+.nav-hover {
+  @apply hover:bg-wb-green/30 hover:text-wb-olive transition-colors duration-200 rounded-xl;
+}
+
+/* 💡 Scrollbar estetik */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--wb-green);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background-color: var(--wb-cream);
+}
