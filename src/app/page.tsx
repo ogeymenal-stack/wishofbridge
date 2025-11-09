@@ -98,7 +98,13 @@ export default function HomePage() {
           ])
 
         setCategories(categoriesRes.data || [])
-        setFeaturedListings(listingsRes.data || [])
+                const listings =
+          listingsRes.data?.map((item: any) => ({
+            ...item,
+            profiles: item.profiles?.[0] || null,
+          })) || []
+
+        setFeaturedListings(listings)
 
         const satisfaction =
           reviewAvg.data && typeof reviewAvg.data === 'number'
