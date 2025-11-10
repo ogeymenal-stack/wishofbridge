@@ -122,9 +122,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setProfile(null)
+    try {
+      console.log('🔐 Çıkış yapılıyor...')
+      
+      // 1. Önce Supabase'den çıkış yap
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        console.error('❌ Çıkış hatası:', error)
+        throw error
+      }
+      
+      // 2. Local state'i temizle
+      setUser(null)
+      setProfile(null)
+      
+      console.log('✅ Çıkış başarılı, sayfa yenileniyor...')
+      
+      // 3. Sayfayı ana sayfaya yönlendir ve yenile
+      window.location.href = '/'
+      
+    } catch (err: any) {
+      console.error('💥 Çıkış işlemi başarısız:', err)
+      // Hata olsa bile local state'i temizle ve sayfayı yenile
+      setUser(null)
+      setProfile(null)
+      window.location.href = '/'
+    }
   }
 
   useEffect(() => {
