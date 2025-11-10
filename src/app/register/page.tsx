@@ -17,104 +17,132 @@ export default function RegisterPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setInfo('')
     setLoading(true)
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      // Sadece auth kaydı yap, profile'ı AuthContext halletsin
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    })
+      })
 
-    if (error) {
-      if (error.message.includes('User already registered')) {
-        alert('Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.')
-        router.push('/login')
-      } else {
-        setError(error.message)
+      if (authError) {
+        if (authError.message.includes('User already registered')) {
+          setError('Bu e-posta zaten kayıtlı. Lütfen giriş yapın.')
+          setTimeout(() => router.push('/login'), 2000)
+        } else {
+          setError(`Kayıt hatası: ${authError.message}`)
+        }
+        setLoading(false)
+        return
       }
+
+      if (authData?.user) {
+        setInfo('✅ Kayıt başarılı! Profiliniz otomatik oluşturulacak. Giriş sayfasına yönlendiriliyorsunuz...')
+        setTimeout(() => router.push('/login'), 3000)
+      }
+    } catch (err: any) {
+      setError(err.message || 'Beklenmeyen bir hata oluştu')
+    } finally {
       setLoading(false)
-      return
     }
-
-    if (data?.user) {
-      setInfo('✅ Kayıt başarılı! Lütfen e-postanızı doğrulayıp giriş yapın.')
-      setTimeout(() => router.push('/login'), 2500)
-    }
-
-    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen bg-wb-cream flex items-center justify-center">
-      <form
-        onSubmit={handleRegister}
-        className="bg-white/80 backdrop-blur-md p-8 rounded-2xl shadow-lg w-full max-w-md space-y-5"
-      >
-        <h1 className="text-2xl font-bold text-center text-wb-olive flex justify-center items-center gap-2">
-          <UserPlus size={22} /> Hesap Oluştur
-        </h1>
-
-        {error && <p className="text-red-600 text-sm text-center">{error}</p>}
-        {info && <p className="text-green-600 text-sm text-center">{info}</p>}
-
-        <div>
-          <label className="block text-sm font-semibold text-wb-olive mb-1">Ad Soyad</label>
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            required
-            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-wb-olive focus:border-wb-olive"
-          />
+    <div className="min-h-screen bg-wb-cream flex items-center justify-center p-4">
+      <div className="bg-white/80 backdrop-blur-md p-8 rounded-2xl shadow-lg w-full max-w-md border border-wb-olive/20">
+        <div className="text-center mb-6">
+          <div className="mx-auto w-12 h-12 bg-wb-olive/10 rounded-full flex items-center justify-center mb-3">
+            <UserPlus className="text-wb-olive" size={24} />
+          </div>
+          <h1 className="text-2xl font-bold text-wb-olive">Hesap Oluştur</h1>
+          <p className="text-gray-600 text-sm mt-1">Topluluğumuza katılın</p>
         </div>
 
-        <div>
-          <label className="block text-sm font-semibold text-wb-olive mb-1">E-posta</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-wb-olive focus:border-wb-olive"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-semibold text-wb-olive mb-1">Şifre</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-wb-olive focus:border-wb-olive"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full flex items-center justify-center bg-wb-olive text-white py-3 rounded-xl font-semibold hover:bg-wb-green transition"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="animate-spin mr-2" /> Kayıt yapılıyor...
-            </>
-          ) : (
-            'Kayıt Ol'
+        <form onSubmit={handleRegister} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-red-600 text-sm text-center">{error}</p>
+            </div>
           )}
-        </button>
+          
+          {info && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+              <p className="text-green-600 text-sm text-center">{info}</p>
+            </div>
+          )}
 
-        <p className="text-center text-sm text-slate-600">
-          Zaten hesabın var mı?{' '}
-          <a href="/login" className="text-wb-olive font-semibold hover:underline">
-            Giriş Yap
-          </a>
-        </p>
-      </form>
+          <div>
+            <label className="block text-sm font-semibold text-wb-olive mb-2">Ad Soyad</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-wb-olive focus:border-transparent transition-all"
+              placeholder="Adınız ve soyadınız"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-wb-olive mb-2">E-posta</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-wb-olive focus:border-transparent transition-all"
+              placeholder="ornek@email.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-wb-olive mb-2">Şifre</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-wb-olive focus:border-transparent transition-all"
+              placeholder="En az 6 karakter"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full flex items-center justify-center bg-wb-olive text-white py-3 rounded-xl font-semibold hover:bg-wb-green transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin mr-2" size={18} />
+                Kayıt yapılıyor...
+              </>
+            ) : (
+              'Hesap Oluştur'
+            )}
+          </button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <p className="text-sm text-gray-600">
+            Zaten hesabınız var mı?{' '}
+            <a 
+              href="/login" 
+              className="text-wb-olive font-semibold hover:underline transition"
+            >
+              Giriş Yapın
+            </a>
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

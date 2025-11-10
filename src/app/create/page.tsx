@@ -80,7 +80,7 @@ export default function CreatePage() {
       const { data, error } = await supabase
         .from('categories')
         .select('id,name,slug,parent_id,type')
-        .eq('parent_id', sel1)
+        .eq('parent_id', Number(sel1))
         .order('name')
       if (!error) setLevel2((data || []) as Cat[])
     })()
@@ -93,7 +93,7 @@ export default function CreatePage() {
       const { data, error } = await supabase
         .from('categories')
         .select('id,name,slug,parent_id,type')
-        .eq('parent_id', sel2)
+        .eq('parent_id', Number(sel2))
         .order('name')
       if (!error) setLevel3((data || []) as Cat[])
     })()
@@ -111,7 +111,7 @@ export default function CreatePage() {
       const { data } = await supabase
         .from('categories')
         .select('type')
-        .eq('id', finalCategoryId)
+        .eq('id', Number(finalCategoryId))
         .single()
       setCurrentType((data?.type as any) || '')
     })()
