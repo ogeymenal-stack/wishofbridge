@@ -1,18 +1,26 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 export default function AuthPage() {
   const router = useRouter()
+  const params = useSearchParams()
 
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+
+  // URL parametresine göre mod ayarı (örn: /login?mode=signup)
+  useEffect(() => {
+    const modeParam = params.get('mode')
+    if (modeParam === 'signup') setMode('signup')
+  }, [params])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,12 +33,32 @@ export default function AuthPage() {
       setLoading(false)
 
       if (error) return setError(error.message)
-      if (data?.user) router.push('/create')
+      if (data?.user) router.push('/')
     } else {
-      const { data, error } = await supabase.auth.signUp({ email, password })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName },
+        },
+      })
+
       setLoading(false)
-      if (error) return setError(error.message)
-      if (data?.user) setInfo('✅ Kayıt başarılı! E-postanızı doğrulayıp giriş yapabilirsiniz.')
+
+      if (error) {
+        if (error.message.includes('User already registered')) {
+          alert('Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.')
+          router.push('/login')
+        } else {
+          setError(error.message)
+        }
+        return
+      }
+
+      if (data?.user) {
+        setInfo('✅ Kayıt başarılı! Lütfen e-postanızı doğrulayıp giriş yapın.')
+        setMode('login')
+      }
     }
   }
 
@@ -52,6 +80,20 @@ export default function AuthPage() {
       </h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {mode === 'signup' && (
+          <div>
+            <label className="block text-sm font-medium mb-1 text-slate-700">Ad Soyad</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full border border-wb-olive/40 bg-white/70 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-wb-olive/50"
+              placeholder="Ad Soyad"
+              required
+            />
+          </div>
+        )}
+
         <div>
           <label className="block text-sm font-medium mb-1 text-slate-700">E-posta</label>
           <input
@@ -104,14 +146,16 @@ export default function AuthPage() {
             : 'Zaten hesabınız var mı? Giriş yapın.'}
         </button>
 
-        <div>
-          <button
-            onClick={handleResetPassword}
-            className="text-xs text-slate-500 hover:text-slate-700 underline"
-          >
-            Şifremi unuttum
-          </button>
-        </div>
+        {mode === 'login' && (
+          <div>
+            <button
+              onClick={handleResetPassword}
+              className="text-xs text-slate-500 hover:text-slate-700 underline"
+            >
+              Şifremi unuttum
+            </button>
+          </div>
+        )}
       </div>
     </section>
   )
