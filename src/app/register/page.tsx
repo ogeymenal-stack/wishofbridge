@@ -24,7 +24,7 @@ export default function RegisterPage() {
   const [info, setInfo] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [step, setStep] = useState(1) // Çok adımlı form
+  const [step, setStep] = useState(1)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target
@@ -70,75 +70,74 @@ export default function RegisterPage() {
   }
 
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setInfo('')
-    
-    if (!formData.acceptTerms) {
-      setError('Hizmet şartlarını kabul etmelisiniz')
+  e.preventDefault()
+  setError('')
+  setInfo('')
+  setLoading(true)
+
+  try {
+    console.log('🔄 1. Auth kaydı başlıyor...')
+
+    // 1. Sadece auth kaydı yap
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: formData.email,
+      password: formData.password,
+    })
+
+    console.log('🔄 2. Auth sonucu:', { 
+      user: authData?.user?.id, 
+      error: authError?.message 
+    })
+
+    if (authError) {
+      if (authError.message.includes('User already registered')) {
+        setError('Bu e-posta zaten kayıtlı. Lütfen giriş yapın.')
+      } else {
+        setError(`Kayıt hatası: ${authError.message}`)
+      }
+      setLoading(false)
       return
     }
 
-    setLoading(true)
+    if (authData?.user) {
+      console.log('✅ 3. Auth başarılı, profil güncelleniyor...')
+      
+      // 2. INSERT yerine UPDATE kullan
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          full_name: `${formData.firstName} ${formData.lastName}`,
+          phone: formData.phone || null,
+          date_of_birth: formData.dateOfBirth || null,
+          gender: formData.gender || null,
+          terms_accepted: formData.acceptTerms,
+          marketing_emails: formData.marketingEmails,
+          registration_completed: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', authData.user.id)
 
-    try {
-      // 1. Auth kaydı yap
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            full_name: `${formData.firstName} ${formData.lastName}`,
-            phone: formData.phone,
-          },
-          emailRedirectTo: `${window.location.origin}/auth/callback`
-        },
-      })
+      console.log('🔄 4. UPDATE sonucu:', { error: updateError })
 
-      if (authError) {
-        if (authError.message.includes('User already registered')) {
-          setError('Bu e-posta zaten kayıtlı. Lütfen giriş yapın.')
-          setTimeout(() => router.push('/login'), 2000)
-        } else {
-          setError(`Kayıt hatası: ${authError.message}`)
-        }
-        setLoading(false)
-        return
+      if (updateError) {
+        console.error('❌ UPDATE başarısız:', updateError)
+        setInfo('✅ Hesabınız oluşturuldu ancak profil bilgileri kaydedilemedi. Giriş yaparak profilinizi tamamlayabilirsiniz.')
+      } else {
+        console.log('✅ 5. Profil başarıyla güncellendi')
+        setInfo('✅ Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...')
       }
 
-      if (authData?.user) {
-        // 2. Profili güncelle (additional fields)
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .update({
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            full_name: `${formData.firstName} ${formData.lastName}`,
-            phone: formData.phone || null,
-            date_of_birth: formData.dateOfBirth || null,
-            gender: formData.gender || null,
-            terms_accepted: formData.acceptTerms,
-            marketing_emails: formData.marketingEmails,
-            registration_completed: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', authData.user.id)
-
-        if (profileError) {
-          console.error('Profil güncelleme hatası:', profileError)
-        }
-
-        setInfo('✅ Kayıt başarılı! E-posta adresinizi doğrulamanız için bir bağlantı gönderildi. Giriş sayfasına yönlendiriliyorsunuz...')
-        setTimeout(() => router.push('/login'), 4000)
-      }
-    } catch (err: any) {
-      setError(err.message || 'Beklenmeyen bir hata oluştu')
-    } finally {
-      setLoading(false)
+      setTimeout(() => router.push('/login'), 3000)
     }
+  } catch (err: any) {
+    console.error('💥 Beklenmeyen hata:', err)
+    setError(err.message || 'Beklenmeyen bir hata oluştu')
+  } finally {
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-wb-cream flex items-center justify-center p-4">

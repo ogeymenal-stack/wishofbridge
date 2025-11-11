@@ -18,6 +18,7 @@ import {
   Phone,
   Calendar,
   User,
+  Edit,
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -28,6 +29,7 @@ const supabase = createClient(
 export default function ProfilePage() {
   const { id } = useParams()
   const [profile, setProfile] = useState<any>(null)
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const [activeTab, setActiveTab] = useState('posts')
   const [posts, setPosts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,6 +46,15 @@ export default function ProfilePage() {
     }
     return profile.full_name || 'Kullanıcı'
   }
+
+  // Mevcut kullanıcıyı kontrol et
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUser(user)
+    }
+    getCurrentUser()
+  }, [])
 
   // Profil ve değerlendirme verilerini çek
   useEffect(() => {
@@ -87,6 +98,9 @@ export default function ProfilePage() {
     if (id) loadTabData('posts')
   }, [id])
 
+  // Kullanıcı kendi profilini mi görüntülüyor?
+  const isOwnProfile = currentUser?.id === id
+
   if (loading)
     return (
       <div className="flex justify-center items-center h-96">
@@ -112,6 +126,20 @@ export default function ProfilePage() {
             className="w-full h-full object-cover"
           />
         )}
+        
+        {/* Düzenle Butonu - Sadece kendi profili için */}
+        {isOwnProfile && (
+          <div className="absolute top-4 right-4">
+            <a
+              href="/profile/edit"
+              className="bg-white/90 hover:bg-white text-wb-olive px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium shadow-md transition-all hover:shadow-lg"
+            >
+              <Edit size={16} />
+              Profili Düzenle
+            </a>
+          </div>
+        )}
+        
         <div className="absolute -bottom-12 left-6 flex items-end gap-4">
           <img
             src={profile.profile_photo || '/default-avatar.png'}

@@ -32,43 +32,32 @@ const PAGE_SIZE = 20
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [roleFilter, setRoleFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [authorized, setAuthorized] = useState<boolean | null>(null)
-  
-  // Cache state'leri
-  const [usersCache, setUsersCache] = useState<any[]>([])
-  const [lastLoadTime, setLastLoadTime] = useState<number>(0)
 
-  // 🔐 Yalnızca admin veya moderator girebilir - OPTİMİZE EDİLMİŞ
+  // 🔐 Yetki kontrolü
   useEffect(() => {
-    let mounted = true
-    
     ;(async () => {
       const { data } = await supabase.auth.getUser()
       const user = data?.user
-      
-      if (!mounted) return
       
       if (!user) {
         window.location.href = '/'
         return
       }
 
-      // Sadece gerekli alanları çek
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-      if (!mounted) return
-
-      if (error || !profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
+      if (!profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
         alert('Bu sayfa yalnızca yöneticiler içindir.')
         window.location.href = '/'
         return
@@ -76,97 +65,81 @@ export default function AdminUsersPage() {
 
       setAuthorized(true)
     })()
-
-    return () => {
-      mounted = false
-    }
   }, [])
 
+  // 📥 Kullanıcıları yükle
   useEffect(() => {
     if (!authorized) return
 
-    let mounted = true
-    
-    const init = async () => {
-      await loadUsers()
-      
-      if (!mounted) return
-      
-      // Sadece INSERT/UPDATE/DELETE event'lerini dinle
-      const channel = supabase
-        .channel('profiles-admin')
-        .on(
-          'postgres_changes',
-          { 
-            event: '*', 
-            schema: 'public', 
-            table: 'profiles'
-          },
-          () => mounted && loadUsers(true) // Force refresh
-        )
-        .subscribe()
-      
-      return () => {
-        supabase.removeChannel(channel)
+    const loadUsers = async () => {
+      setLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+        
+        if (!error && data) {
+          setUsers(data)
+        }
+      } catch (err) {
+        console.error('Kullanıcı yükleme hatası:', err)
+      } finally {
+        setLoading(false)
       }
     }
 
-    init()
+    loadUsers()
+
+    // Real-time subscription - SADECE INSERT ve UPDATE için
+    const channel = supabase
+      .channel('profiles-changes')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'profiles' 
+        },
+        (payload) => {
+          console.log('Yeni kullanıcı eklendi:', payload)
+          setUsers(prev => [payload.new, ...prev])
+        }
+      )
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'profiles' 
+        },
+        (payload) => {
+          console.log('Kullanıcı güncellendi:', payload)
+          setUsers(prev => prev.map(user => 
+            user.id === payload.old.id ? { ...user, ...payload.new } : user
+          ))
+        }
+      )
+      .on(
+        'postgres_changes',
+        { 
+          event: 'DELETE', 
+          schema: 'public', 
+          table: 'profiles' 
+        },
+        (payload) => {
+          console.log('Kullanıcı silindi:', payload)
+          setUsers(prev => prev.filter(user => user.id !== payload.old.id))
+        }
+      )
+      .subscribe()
 
     return () => {
-      mounted = false
+      supabase.removeChannel(channel)
     }
   }, [authorized])
 
-  // 🚀 Kullanıcıları yükle - OPTİMİZE EDİLMİŞ
-  const loadUsers = async (forceRefresh = false) => {
-    const now = Date.now()
-    const CACHE_DURATION = 30000 // 30 saniye
-    
-    // Cache kontrolü
-    if (!forceRefresh && usersCache.length > 0 && (now - lastLoadTime) < CACHE_DURATION) {
-      setUsers(usersCache)
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    
-    try {
-      // Sadece ihtiyaç duyulan alanları seç
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(`
-          id, 
-          email, 
-          full_name, 
-          username, 
-          status, 
-          role, 
-          is_banned, 
-          created_at
-        `) // Sadece gerekli alanlar
-        .order('created_at', { ascending: false })
-        .limit(1000) // Limit ekle
-      
-      if (!error && data) {
-        const processedData = data.map(user => ({
-          ...user,
-          status: user.status || 'active',
-          is_banned: user.is_banned || false
-        }))
-        setUsers(processedData)
-        setUsersCache(processedData)
-        setLastLoadTime(now)
-      }
-    } catch (err) {
-      console.error('Kullanıcı yükleme hatası:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // 🧮 İstatistik - GÜNCELLENMİŞ
+  // 🧮 İstatistikler
   const stats = useMemo(() => {
     const total = users.length
     const active = users.filter((u) => (u.status === 'active' || !u.status) && !u.is_banned).length
@@ -198,72 +171,126 @@ export default function AdminUsersPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 🔄 Filtre değişince sıfırla
+  // 🔄 Filtre değişince sayfayı sıfırla
   useEffect(() => setPage(1), [searchTerm, statusFilter, roleFilter])
 
-  // ⚙️ Rol değiştirme
-  const handleRoleChange = async (id: string, newRole: string) => {
-    setActionLoading(true)
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id)
-    if (error) alert('Rol değiştirilemedi: ' + error.message)
-    else {
-      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)))
-      setUsersCache(prev => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)))
+  // ⚙️ ROL DEĞİŞTİRME - GÜNCELLENDİ
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setActionLoading(userId)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId)
+
+      if (error) {
+        alert('Rol değiştirilemedi: ' + error.message)
+        return
+      }
+
+      // Local state'i güncelle
+      setUsers(prev => prev.map(user => 
+        user.id === userId ? { ...user, role: newRole } : user
+      ))
+
+      console.log(`Kullanıcı rolü değiştirildi: ${userId} -> ${newRole}`)
+    } catch (err: any) {
+      alert('Rol değiştirme hatası: ' + err.message)
+    } finally {
+      setActionLoading(null)
     }
-    setActionLoading(false)
   }
 
-  // ⛔ Ban işlemi
-  const handleBan = async (id: string, current: boolean) => {
-    setActionLoading(true)
-    const { error } = await supabase.from('profiles').update({ is_banned: !current }).eq('id', id)
-    if (error) alert('İşlem hatası: ' + error.message)
-    else {
-      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, is_banned: !current } : u)))
-      setUsersCache(prev => prev.map((u) => (u.id === id ? { ...u, is_banned: !current } : u)))
+  // ⛔ BAN İŞLEMİ - GÜNCELLENDİ
+  const handleBan = async (userId: string, currentBanStatus: boolean) => {
+    setActionLoading(userId)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_banned: !currentBanStatus })
+        .eq('id', userId)
+
+      if (error) {
+        alert('Ban işlemi hatası: ' + error.message)
+        return
+      }
+
+      // Local state'i güncelle
+      setUsers(prev => prev.map(user => 
+        user.id === userId ? { ...user, is_banned: !currentBanStatus } : user
+      ))
+
+      console.log(`Kullanıcı ban durumu değiştirildi: ${userId} -> ${!currentBanStatus}`)
+    } catch (err: any) {
+      alert('Ban işlemi hatası: ' + err.message)
+    } finally {
+      setActionLoading(null)
     }
-    setActionLoading(false)
   }
 
-  // 🧩 Askıya alma
-  const handleSuspend = async (id: string, newStatus: string) => {
-    setActionLoading(true)
-    const { error } = await supabase.from('profiles').update({ status: newStatus }).eq('id', id)
-    if (error) alert('Hata: ' + error.message)
-    else {
-      const updated = users.map((u) => (u.id === id ? { ...u, status: newStatus } : u))
-      setUsers(updated)
-      setUsersCache(updated)
+  // 🧩 ASKIYA ALMA - GÜNCELLENDİ
+  const handleSuspend = async (userId: string, currentStatus: string) => {
+    setActionLoading(userId)
+    try {
+      const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended'
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update({ status: newStatus })
+        .eq('id', userId)
+
+      if (error) {
+        alert('Askıya alma hatası: ' + error.message)
+        return
+      }
+
+      // Local state'i güncelle
+      setUsers(prev => prev.map(user => 
+        user.id === userId ? { ...user, status: newStatus } : user
+      ))
+
+      console.log(`Kullanıcı durumu değiştirildi: ${userId} -> ${newStatus}`)
+    } catch (err: any) {
+      alert('Askıya alma hatası: ' + err.message)
+    } finally {
+      setActionLoading(null)
     }
-    setActionLoading(false)
   }
 
-  // ✅ Doğrulama
-  const handleVerify = async (id: string) => {
-    setActionLoading(true)
-    const { error } = await supabase
-      .from('profiles')
-      .update({ verification_badges: ['Doğrulanmış'] })
-      .eq('id', id)
-    if (error) alert('Hata: ' + error.message)
-    else {
-      const updated = users.map((u) =>
-        u.id === id ? { ...u, verification_badges: ['Doğrulanmış'] } : u
-      )
-      setUsers(updated)
-      setUsersCache(updated)
+  // ✅ DOĞRULAMA - GÜNCELLENDİ
+  const handleVerify = async (userId: string) => {
+    setActionLoading(userId)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ verification_badges: ['Doğrulanmış'] })
+        .eq('id', userId)
+
+      if (error) {
+        alert('Doğrulama hatası: ' + error.message)
+        return
+      }
+
+      // Local state'i güncelle
+      setUsers(prev => prev.map(user => 
+        user.id === userId ? { ...user, verification_badges: ['Doğrulanmış'] } : user
+      ))
+
+      console.log(`Kullanıcı doğrulandı: ${userId}`)
+    } catch (err: any) {
+      alert('Doğrulama hatası: ' + err.message)
+    } finally {
+      setActionLoading(null)
     }
-    setActionLoading(false)
   }
 
-  // 🗑️ KULLANICI SİLME İŞLEMİ
+  // 🗑️ KULLANICI SİLME - GÜNCELLENDİ
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!')) {
       return
     }
 
-    setActionLoading(true)
-    
+    setActionLoading(userId)
     try {
       // 1. Önce kullanıcının ilanlarını sil
       const { error: postsError } = await supabase
@@ -283,23 +310,41 @@ export default function AdminUsersPage() {
 
       if (profileError) {
         alert('Kullanıcı silinemedi: ' + profileError.message)
-        setActionLoading(false)
         return
       }
 
-      // 3. Local state'den kaldır
+      // Local state'den kaldır (real-time subscription da zaten tetiklenecek)
       setUsers(prev => prev.filter(user => user.id !== userId))
-      setUsersCache(prev => prev.filter(user => user.id !== userId))
       
       alert('✅ Kullanıcı başarıyla silindi!')
       
     } catch (error: any) {
       alert('Silme işlemi sırasında hata: ' + error.message)
     } finally {
-      setActionLoading(false)
+      setActionLoading(null)
     }
   }
 
+  // 📥 MANUEL YENİLEME
+  const handleRefresh = async () => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (!error && data) {
+        setUsers(data)
+      }
+    } catch (err) {
+      console.error('Yenileme hatası:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 📊 CSV Export
   const exportCSV = () => {
     if (filtered.length === 0) return alert('Aktarılacak veri yok.')
     const headers = ['ID', 'Ad Soyad', 'E-posta', 'Kullanıcı Adı', 'Durum', 'Rol', 'Ban', 'Kayıt']
@@ -349,7 +394,7 @@ export default function AdminUsersPage() {
         <Users size={22} /> Tüm Kullanıcılar
       </h1>
 
-      {/* Sayaçlar - GÜNCELLENMİŞ */}
+      {/* Sayaçlar */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
         <StatCard icon={Users} label="Aktif" value={stats.active} color="text-green-600" />
         <StatCard icon={Ban} label="Askıya" value={stats.suspended} color="text-red-600" />
@@ -397,7 +442,7 @@ export default function AdminUsersPage() {
           </select>
 
           <button
-            onClick={() => loadUsers(true)}
+            onClick={handleRefresh}
             className="flex items-center gap-1 bg-wb-olive text-white px-3 py-2 rounded-xl text-sm hover:bg-wb-green transition"
           >
             <RefreshCw size={14} /> Yenile
@@ -432,77 +477,73 @@ export default function AdminUsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {pageData.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50">
+                {pageData.map((user) => (
+                  <tr key={user.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => setSelectedUserId(u.id)}
+                        onClick={() => setSelectedUserId(user.id)}
                         className="text-wb-olive hover:underline"
                       >
-                        {u.full_name || '—'}
+                        {user.full_name || '—'}
                       </button>
                     </td>
-                    <td className="px-4 py-3">{u.email}</td>
-                    <td className="px-4 py-3">@{u.username || '—'}</td>
+                    <td className="px-4 py-3">{user.email}</td>
+                    <td className="px-4 py-3">@{user.username || '—'}</td>
                     <td className="px-4 py-3 text-center">
-                      <StatusBadge status={u.status} />
+                      <StatusBadge status={user.status} />
                     </td>
-                    <td className="px-4 py-3 text-center capitalize">{u.role || 'user'}</td>
+                    <td className="px-4 py-3 text-center capitalize">{user.role || 'user'}</td>
                     <td className="px-4 py-3 text-center">
-                      {u.is_banned ? (
+                      {user.is_banned ? (
                         <span className="text-red-600 font-semibold">⛔</span>
                       ) : (
                         <span className="text-green-600 font-semibold">✔</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {new Date(u.created_at).toLocaleDateString('tr-TR')}
+                      {new Date(user.created_at).toLocaleDateString('tr-TR')}
                     </td>
                     <td className="px-4 py-3 text-center space-x-2">
-                      {actionLoading ? (
+                      {actionLoading === user.id ? (
                         <Loader2 className="animate-spin inline text-wb-olive" size={14} />
                       ) : (
                         <>
+                          {/* Askıya Al / Aktif Et */}
                           <button
-                            onClick={() =>
-                              handleSuspend(u.id, u.status === 'suspended' ? 'active' : 'suspended')
-                            }
+                            onClick={() => handleSuspend(user.id, user.status)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
                           >
                             <UserX size={12} className="mr-1" />
-                            {u.status === 'suspended' ? 'Aktif Et' : 'Askıya Al'}
+                            {user.status === 'suspended' ? 'Aktif Et' : 'Askıya Al'}
                           </button>
 
+                          {/* Ban / Ban Kaldır */}
                           <button
-                            onClick={() =>
-                              handleBan(u.id, u.is_banned)
-                            }
+                            onClick={() => handleBan(user.id, user.is_banned)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
                           >
                             <Ban size={12} className="mr-1" />
-                            {u.is_banned ? 'Ban Kaldır' : 'Banla'}
+                            {user.is_banned ? 'Ban Kaldır' : 'Banla'}
                           </button>
 
+                          {/* Rol Değiştir */}
                           <button
-                            onClick={() =>
-                              handleRoleChange(
-                                u.id,
-                                u.role === 'user'
-                                  ? 'moderator'
-                                  : u.role === 'moderator'
-                                  ? 'admin'
-                                  : 'user'
-                              )
-                            }
+                            onClick={() => {
+                              const newRole = 
+                                user.role === 'user' ? 'moderator' :
+                                user.role === 'moderator' ? 'admin' : 'user'
+                              handleRoleChange(user.id, newRole)
+                            }}
                             className="inline-flex items-center text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
                           >
                             <ShieldCheck size={12} className="mr-1" />
                             Rol Değiştir
                           </button>
 
-                          {!u.verification_badges?.includes('Doğrulanmış') && (
+                          {/* Doğrula */}
+                          {!user.verification_badges?.includes('Doğrulanmış') && (
                             <button
-                              onClick={() => handleVerify(u.id)}
+                              onClick={() => handleVerify(user.id)}
                               className="inline-flex items-center text-xs px-2 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200"
                             >
                               <UserCheck size={12} className="mr-1" />
@@ -510,9 +551,9 @@ export default function AdminUsersPage() {
                             </button>
                           )}
 
-                          {/* SİLME BUTONU */}
+                          {/* Sil */}
                           <button
-                            onClick={() => handleDeleteUser(u.id)}
+                            onClick={() => handleDeleteUser(user.id)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
                             title="Kullanıcıyı Sil"
                           >
