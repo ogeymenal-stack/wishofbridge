@@ -47,15 +47,25 @@ export default function Header() {
 
   // Rol bazlı panel metni & linki
   const panelLabel =
-    role === 'admin' ? 'Admin Panel' : role === 'moderator' ? 'Yönetim Paneli' : 'Profilim'
+  role === 'admin'
+    ? 'Admin Panel'
+    : role === 'moderator'
+    ? 'Moderatör Paneli'
+    : 'Profilim'
 
-  const panelHref =
-    role === 'admin' || role === 'moderator' ? '/admin' : user ? `/profile/${user.id}` : '/login'
+const panelHref =
+  role === 'admin'
+    ? '/admin'
+    : role === 'moderator'
+    ? '/moderator'
+    : `/profile/${user?.id}`
 
-  const displayName =
-    profile?.full_name ||
-    user?.email?.split('@')[0] ||
-    'Kullanıcı'
+ const displayName =
+  profile?.first_name && profile?.last_name 
+    ? `${profile.first_name} ${profile.last_name}`
+    : profile?.full_name || 
+      user?.email?.split('@')[0] || 
+      'Kullanıcı'
 
   // Menü kapatma (route değişimlerinde veya logo tıklanınca)
   useEffect(() => {

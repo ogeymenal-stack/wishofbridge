@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Camera, Loader2, Save } from 'lucide-react'
+import { Camera, Loader2, Save, User, Phone, Calendar } from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,9 +55,15 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  // -----------------------------------------------------
+  // Tam adı hesapla
+  const getFullName = () => {
+    if (profile.first_name && profile.last_name) {
+      return `${profile.first_name} ${profile.last_name}`
+    }
+    return profile.full_name || ''
+  }
+
   // 🔹 Kullanıcı ve ayarları yükle
-  // -----------------------------------------------------
   useEffect(() => {
     ;(async () => {
       const { data } = await supabase.auth.getUser()
@@ -94,9 +100,7 @@ export default function EditProfilePage() {
     })()
   }, [])
 
-  // -----------------------------------------------------
   // 🔹 Resim yükleme
-  // -----------------------------------------------------
   const handleUpload = async (e: any, type: 'profile_photo' | 'cover_photo') => {
     const file = e.target.files[0]
     if (!file || !user) return
@@ -129,19 +133,25 @@ export default function EditProfilePage() {
     else setProfile((p: any) => ({ ...p, [type]: publicUrl }))
   }
 
-  // -----------------------------------------------------
   // 🔹 Kaydetme işlemi
-  // -----------------------------------------------------
   const handleSave = async () => {
     if (!user) return
     setSaving(true)
+
+    // Tam adı güncelle
+    const fullName = getFullName()
 
     // Profil güncelle
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
-        full_name: profile.full_name,
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+        full_name: fullName,
         username: profile.username,
+        phone: profile.phone,
+        date_of_birth: profile.date_of_birth,
+        gender: profile.gender,
         location: profile.location,
         website: profile.website,
         bio: profile.bio,
@@ -175,9 +185,7 @@ export default function EditProfilePage() {
     setTimeout(() => setSuccess(false), 3000)
   }
 
-  // -----------------------------------------------------
   // 🔹 Görünüm
-  // -----------------------------------------------------
   if (loading)
     return (
       <div className="flex justify-center items-center h-96">
@@ -226,7 +234,7 @@ export default function EditProfilePage() {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-wb-olive text-white text-xl">
-              {profile.full_name?.charAt(0) || '?'}
+              {getFullName().charAt(0) || '?'}
             </div>
           )}
           <label className="absolute bottom-1 right-1 bg-wb-olive text-white p-1.5 rounded-full cursor-pointer hover:bg-wb-green transition">
@@ -242,7 +250,7 @@ export default function EditProfilePage() {
 
         <div className="ml-6">
           <h2 className="text-xl font-semibold text-wb-olive">
-            {profile.full_name || 'Ad Soyad'}
+            {getFullName() || 'Ad Soyad'}
           </h2>
           <p className="text-gray-500">@{profile.username || 'kullanici'}</p>
         </div>
@@ -250,19 +258,38 @@ export default function EditProfilePage() {
 
       {/* 🧾 Profil Bilgileri */}
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            Ad Soyad
-          </label>
-          <input
-            type="text"
-            value={profile.full_name || ''}
-            onChange={(e) =>
-              setProfile({ ...profile, full_name: e.target.value })
-            }
-            className="w-full border border-gray-300 rounded-xl px-3 py-2"
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              <User className="inline w-4 h-4 mr-1" />
+              Ad *
+            </label>
+            <input
+              type="text"
+              value={profile.first_name || ''}
+              onChange={(e) =>
+                setProfile({ ...profile, first_name: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-3 py-2"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Soyad *
+            </label>
+            <input
+              type="text"
+              value={profile.last_name || ''}
+              onChange={(e) =>
+                setProfile({ ...profile, last_name: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-3 py-2"
+              required
+            />
+          </div>
         </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-600 mb-1">
             Kullanıcı Adı
@@ -274,6 +301,103 @@ export default function EditProfilePage() {
               setProfile({ ...profile, username: e.target.value })
             }
             className="w-full border border-gray-300 rounded-xl px-3 py-2"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            <Phone className="inline w-4 h-4 mr-1" />
+            Telefon
+          </label>
+          <input
+            type="tel"
+            value={profile.phone || ''}
+            onChange={(e) =>
+              setProfile({ ...profile, phone: e.target.value })
+            }
+            className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            placeholder="+90 5XX XXX XX XX"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              <Calendar className="inline w-4 h-4 mr-1" />
+              Doğum Tarihi
+            </label>
+            <input
+              type="date"
+              value={profile.date_of_birth || ''}
+              onChange={(e) =>
+                setProfile({ ...profile, date_of_birth: e.target.value })
+              }
+              max={new Date().toISOString().split('T')[0]}
+              className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Cinsiyet
+            </label>
+            <select
+              value={profile.gender || ''}
+              onChange={(e) =>
+                setProfile({ ...profile, gender: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            >
+              <option value="">Seçiniz</option>
+              <option value="male">Erkek</option>
+              <option value="female">Kadın</option>
+              <option value="other">Diğer</option>
+              <option value="prefer_not_to_say">Belirtmek İstemiyorum</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            Konum
+          </label>
+          <input
+            type="text"
+            value={profile.location || ''}
+            onChange={(e) =>
+              setProfile({ ...profile, location: e.target.value })
+            }
+            className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            placeholder="Şehir, Ülke"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            Website
+          </label>
+          <input
+            type="url"
+            value={profile.website || ''}
+            onChange={(e) =>
+              setProfile({ ...profile, website: e.target.value })
+            }
+            className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            placeholder="https://example.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-1">
+            Hakkımda
+          </label>
+          <textarea
+            value={profile.bio || ''}
+            onChange={(e) =>
+              setProfile({ ...profile, bio: e.target.value })
+            }
+            rows={4}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2"
+            placeholder="Kendinizden bahsedin..."
           />
         </div>
       </div>

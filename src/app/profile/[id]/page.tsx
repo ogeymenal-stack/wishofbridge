@@ -15,6 +15,9 @@ import {
   HeartHandshake,
   ShoppingCart,
   MessageCircle,
+  Phone,
+  Calendar,
+  User,
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -33,6 +36,14 @@ export default function ProfilePage() {
     avg: 0,
     count: 0,
   })
+
+  // Tam adı hesapla
+  const getFullName = (profile: any) => {
+    if (profile.first_name && profile.last_name) {
+      return `${profile.first_name} ${profile.last_name}`
+    }
+    return profile.full_name || 'Kullanıcı'
+  }
 
   // Profil ve değerlendirme verilerini çek
   useEffect(() => {
@@ -109,7 +120,7 @@ export default function ProfilePage() {
           />
           <div>
             <h2 className="text-2xl font-semibold text-wb-olive flex items-center gap-2">
-              {profile.full_name}
+              {getFullName(profile)}
               {profile.verification_badges?.includes('Doğrulanmış') && (
                 <Shield size={18} className="text-green-500" />
               )}
@@ -136,16 +147,57 @@ export default function ProfilePage() {
 
       {/* 🧾 Bilgiler */}
       <div className="bg-white mt-16 p-6 rounded-xl shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="space-y-3">
+            <h3 className="font-semibold text-wb-olive mb-3">Kişisel Bilgiler</h3>
+            
+            <p className="flex items-center gap-2 text-gray-700">
+              <User size={16} /> 
+              {profile.first_name && profile.last_name 
+                ? `${profile.first_name} ${profile.last_name}`
+                : profile.full_name || '—'
+              }
+            </p>
+            
             <p className="flex items-center gap-2 text-gray-700">
               <Mail size={16} /> {profile.email || '—'}
             </p>
+            
+            {profile.phone && (
+              <p className="flex items-center gap-2 text-gray-700">
+                <Phone size={16} /> {profile.phone}
+              </p>
+            )}
+            
+            {profile.date_of_birth && (
+              <p className="flex items-center gap-2 text-gray-700">
+                <Calendar size={16} /> 
+                {new Date(profile.date_of_birth).toLocaleDateString('tr-TR')}
+              </p>
+            )}
+            
+            {profile.gender && (
+              <p className="flex items-center gap-2 text-gray-700">
+                <span className="text-sm">Cinsiyet:</span>
+                <span className="capitalize">
+                  {profile.gender === 'male' ? 'Erkek' : 
+                   profile.gender === 'female' ? 'Kadın' : 
+                   profile.gender === 'other' ? 'Diğer' : 
+                   'Belirtmek İstemiyor'}
+                </span>
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="font-semibold text-wb-olive mb-3">İletişim & Sosyal</h3>
+            
             {profile.location && (
               <p className="flex items-center gap-2 text-gray-700">
                 <MapPin size={16} /> {profile.location}
               </p>
             )}
+            
             {profile.website && (
               <p className="flex items-center gap-2 text-gray-700">
                 <Globe size={16} />{' '}
@@ -159,11 +211,20 @@ export default function ProfilePage() {
                 </a>
               </p>
             )}
+            
+            {profile.join_date && (
+              <p className="flex items-center gap-2 text-gray-700 text-sm">
+                <span>Üyelik:</span>
+                <span>{new Date(profile.join_date).toLocaleDateString('tr-TR')}</span>
+              </p>
+            )}
           </div>
+
           {profile.bio && (
-            <div>
-              <p className="text-gray-600">
-                <strong>Hakkımda:</strong> {profile.bio}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-wb-olive mb-3">Hakkımda</h3>
+              <p className="text-gray-600 leading-relaxed">
+                {profile.bio}
               </p>
             </div>
           )}
@@ -208,6 +269,7 @@ export default function ProfilePage() {
         ) : activeTab === 'reviews' ? (
           <UserReviewsSection
             reviewedUserId={id as string}
+            reviewedUserName={getFullName(profile)}
             onReviewAdded={() => {
               // yeni yorum eklenirse ortalama güncellensin
               supabase
@@ -275,9 +337,11 @@ export default function ProfilePage() {
 --------------------------------------------- */
 function UserReviewsSection({
   reviewedUserId,
+  reviewedUserName,
   onReviewAdded,
 }: {
   reviewedUserId: string
+  reviewedUserName: string
   onReviewAdded: () => void
 }) {
   const [reviews, setReviews] = useState<any[]>([])
@@ -293,7 +357,7 @@ function UserReviewsSection({
 
       const { data } = await supabase
         .from('user_reviews')
-        .select('*, reviewer:reviewer_id(full_name, profile_photo)')
+        .select('*, reviewer:reviewer_id(first_name, last_name, full_name, profile_photo)')
         .eq('reviewed_user_id', reviewedUserId)
         .order('created_at', { ascending: false })
       setReviews(data || [])
@@ -320,7 +384,11 @@ function UserReviewsSection({
 
     setReviews([
       {
-        reviewer: { full_name: user.user_metadata.full_name || 'Anonim' },
+        reviewer: { 
+          first_name: user.user_metadata.first_name,
+          last_name: user.user_metadata.last_name,
+          full_name: `${user.user_metadata.first_name} ${user.user_metadata.last_name}` || 'Anonim' 
+        },
         rating: newReview.rating,
         comment: newReview.comment,
         created_at: new Date(),
@@ -346,7 +414,7 @@ function UserReviewsSection({
   return (
     <div>
       <h3 className="text-lg font-semibold text-wb-olive mb-4">
-        Kullanıcı Değerlendirmeleri
+        {reviewedUserName} - Kullanıcı Değerlendirmeleri
       </h3>
 
       {avgRating ? (
@@ -363,68 +431,76 @@ function UserReviewsSection({
       )}
 
       {/* Yeni yorum formu */}
-      <div className="border border-wb-olive/20 rounded-xl p-4 mb-6">
-        <label className="block text-sm font-medium text-gray-600 mb-2">
-          Puan:
-        </label>
-        <select
-          value={newReview.rating}
-          onChange={(e) =>
-            setNewReview({ ...newReview, rating: Number(e.target.value) })
-          }
-          className="border rounded-lg px-2 py-1 mb-3"
-        >
-          {[5, 4, 3, 2, 1].map((r) => (
-            <option key={r} value={r}>
-              {r} Yıldız
-            </option>
-          ))}
-        </select>
+      {user && user.id !== reviewedUserId && (
+        <div className="border border-wb-olive/20 rounded-xl p-4 mb-6">
+          <label className="block text-sm font-medium text-gray-600 mb-2">
+            Puan:
+          </label>
+          <select
+            value={newReview.rating}
+            onChange={(e) =>
+              setNewReview({ ...newReview, rating: Number(e.target.value) })
+            }
+            className="border rounded-lg px-2 py-1 mb-3"
+          >
+            {[5, 4, 3, 2, 1].map((r) => (
+              <option key={r} value={r}>
+                {r} Yıldız
+              </option>
+            ))}
+          </select>
 
-        <textarea
-          rows={3}
-          value={newReview.comment}
-          onChange={(e) =>
-            setNewReview({ ...newReview, comment: e.target.value })
-          }
-          placeholder="Deneyimini paylaş..."
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:ring-wb-olive focus:border-wb-olive"
-        />
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="bg-wb-olive text-white px-4 py-2 rounded-lg hover:bg-wb-green transition"
-        >
-          {submitting ? 'Gönderiliyor...' : 'Yorumu Gönder'}
-        </button>
-      </div>
+          <textarea
+            rows={3}
+            value={newReview.comment}
+            onChange={(e) =>
+              setNewReview({ ...newReview, comment: e.target.value })
+            }
+            placeholder="Deneyimini paylaş..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:ring-wb-olive focus:border-wb-olive"
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="bg-wb-olive text-white px-4 py-2 rounded-lg hover:bg-wb-green transition"
+          >
+            {submitting ? 'Gönderiliyor...' : 'Yorumu Gönder'}
+          </button>
+        </div>
+      )}
 
       {/* Yorum listesi */}
       <div className="space-y-4">
-        {reviews.map((r) => (
-          <div
-            key={r.id}
-            className="border border-wb-olive/10 rounded-xl p-4 bg-wb-cream/30"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <img
-                src={r.reviewer?.profile_photo || '/default-avatar.png'}
-                alt={r.reviewer?.full_name}
-                className="w-10 h-10 rounded-full object-cover"
-              />
-              <div>
-                <p className="font-medium text-wb-olive">
-                  {r.reviewer?.full_name || 'Anonim'}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {new Date(r.created_at).toLocaleDateString('tr-TR')}
-                </p>
+        {reviews.map((r) => {
+          const reviewerName = r.reviewer?.first_name && r.reviewer?.last_name 
+            ? `${r.reviewer.first_name} ${r.reviewer.last_name}`
+            : r.reviewer?.full_name || 'Anonim'
+            
+          return (
+            <div
+              key={r.id}
+              className="border border-wb-olive/10 rounded-xl p-4 bg-wb-cream/30"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <img
+                  src={r.reviewer?.profile_photo || '/default-avatar.png'}
+                  alt={reviewerName}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+                <div>
+                  <p className="font-medium text-wb-olive">
+                    {reviewerName}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {new Date(r.created_at).toLocaleDateString('tr-TR')}
+                  </p>
+                </div>
               </div>
+              <p className="text-yellow-500 mb-1">{'⭐'.repeat(r.rating)}</p>
+              <p className="text-gray-700 text-sm">{r.comment}</p>
             </div>
-            <p className="text-yellow-500 mb-1">{'⭐'.repeat(r.rating)}</p>
-            <p className="text-gray-700 text-sm">{r.comment}</p>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

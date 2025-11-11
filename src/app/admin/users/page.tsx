@@ -18,6 +18,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Shield,
+  Trash2,
 } from 'lucide-react'
 import UserDetailModal from '@/components/admin/UserDetailModal'
 
@@ -38,24 +39,36 @@ export default function AdminUsersPage() {
   const [page, setPage] = useState(1)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [authorized, setAuthorized] = useState<boolean | null>(null)
+  
+  // Cache state'leri
+  const [usersCache, setUsersCache] = useState<any[]>([])
+  const [lastLoadTime, setLastLoadTime] = useState<number>(0)
 
-  // 🔐 Yalnızca admin veya moderator girebilir
+  // 🔐 Yalnızca admin veya moderator girebilir - OPTİMİZE EDİLMİŞ
   useEffect(() => {
+    let mounted = true
+    
     ;(async () => {
       const { data } = await supabase.auth.getUser()
       const user = data?.user
+      
+      if (!mounted) return
+      
       if (!user) {
         window.location.href = '/'
         return
       }
 
-      const { data: profile } = await supabase
+      // Sadece gerekli alanları çek
+      const { data: profile, error } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', user.id)
         .single()
 
-      if (!profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
+      if (!mounted) return
+
+      if (error || !profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
         alert('Bu sayfa yalnızca yöneticiler içindir.')
         window.location.href = '/'
         return
@@ -63,45 +76,107 @@ export default function AdminUsersPage() {
 
       setAuthorized(true)
     })()
+
+    return () => {
+      mounted = false
+    }
   }, [])
 
   useEffect(() => {
-    if (authorized) {
-      loadUsers()
-      // Realtime dinleyici (isteğe bağlı)
+    if (!authorized) return
+
+    let mounted = true
+    
+    const init = async () => {
+      await loadUsers()
+      
+      if (!mounted) return
+      
+      // Sadece INSERT/UPDATE/DELETE event'lerini dinle
       const channel = supabase
-        .channel('profiles-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () =>
-          loadUsers()
+        .channel('profiles-admin')
+        .on(
+          'postgres_changes',
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'profiles'
+          },
+          () => mounted && loadUsers(true) // Force refresh
         )
         .subscribe()
+      
       return () => {
         supabase.removeChannel(channel)
       }
     }
+
+    init()
+
+    return () => {
+      mounted = false
+    }
   }, [authorized])
 
-  // 🚀 Kullanıcıları yükle
-  const loadUsers = async () => {
+  // 🚀 Kullanıcıları yükle - OPTİMİZE EDİLMİŞ
+  const loadUsers = async (forceRefresh = false) => {
+    const now = Date.now()
+    const CACHE_DURATION = 30000 // 30 saniye
+    
+    // Cache kontrolü
+    if (!forceRefresh && usersCache.length > 0 && (now - lastLoadTime) < CACHE_DURATION) {
+      setUsers(usersCache)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(
-        'id, email, full_name, username, status, role, is_banned, created_at, verification_badges'
-      )
-      .order('created_at', { ascending: false })
-    if (!error && data) setUsers(data)
-    setLoading(false)
+    
+    try {
+      // Sadece ihtiyaç duyulan alanları seç
+      const { data, error } = await supabase
+        .from('profiles')
+        .select(`
+          id, 
+          email, 
+          full_name, 
+          username, 
+          status, 
+          role, 
+          is_banned, 
+          created_at
+        `) // Sadece gerekli alanlar
+        .order('created_at', { ascending: false })
+        .limit(1000) // Limit ekle
+      
+      if (!error && data) {
+        const processedData = data.map(user => ({
+          ...user,
+          status: user.status || 'active',
+          is_banned: user.is_banned || false
+        }))
+        setUsers(processedData)
+        setUsersCache(processedData)
+        setLastLoadTime(now)
+      }
+    } catch (err) {
+      console.error('Kullanıcı yükleme hatası:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // 🧮 İstatistik
+  // 🧮 İstatistik - GÜNCELLENMİŞ
   const stats = useMemo(() => {
     const total = users.length
-    const active = users.filter((u) => u.status === 'active' && !u.is_banned).length
+    const active = users.filter((u) => (u.status === 'active' || !u.status) && !u.is_banned).length
     const suspended = users.filter((u) => u.status === 'suspended').length
     const pending = users.filter((u) => u.status === 'pending').length
     const admins = users.filter((u) => u.role === 'admin').length
-    return { total, active, suspended, pending, admins }
+    const moderators = users.filter((u) => u.role === 'moderator').length
+    const banned = users.filter((u) => u.is_banned).length
+    
+    return { total, active, suspended, pending, admins, moderators, banned }
   }, [users])
 
   // 🔍 Filtreleme
@@ -133,6 +208,7 @@ export default function AdminUsersPage() {
     if (error) alert('Rol değiştirilemedi: ' + error.message)
     else {
       setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)))
+      setUsersCache(prev => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)))
     }
     setActionLoading(false)
   }
@@ -144,6 +220,7 @@ export default function AdminUsersPage() {
     if (error) alert('İşlem hatası: ' + error.message)
     else {
       setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, is_banned: !current } : u)))
+      setUsersCache(prev => prev.map((u) => (u.id === id ? { ...u, is_banned: !current } : u)))
     }
     setActionLoading(false)
   }
@@ -156,6 +233,7 @@ export default function AdminUsersPage() {
     else {
       const updated = users.map((u) => (u.id === id ? { ...u, status: newStatus } : u))
       setUsers(updated)
+      setUsersCache(updated)
     }
     setActionLoading(false)
   }
@@ -173,8 +251,53 @@ export default function AdminUsersPage() {
         u.id === id ? { ...u, verification_badges: ['Doğrulanmış'] } : u
       )
       setUsers(updated)
+      setUsersCache(updated)
     }
     setActionLoading(false)
+  }
+
+  // 🗑️ KULLANICI SİLME İŞLEMİ
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!')) {
+      return
+    }
+
+    setActionLoading(true)
+    
+    try {
+      // 1. Önce kullanıcının ilanlarını sil
+      const { error: postsError } = await supabase
+        .from('posts')
+        .delete()
+        .eq('user_id', userId)
+
+      if (postsError) {
+        console.warn('Kullanıcı ilanları silinemedi:', postsError)
+      }
+
+      // 2. Kullanıcıyı profiles tablosundan sil
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId)
+
+      if (profileError) {
+        alert('Kullanıcı silinemedi: ' + profileError.message)
+        setActionLoading(false)
+        return
+      }
+
+      // 3. Local state'den kaldır
+      setUsers(prev => prev.filter(user => user.id !== userId))
+      setUsersCache(prev => prev.filter(user => user.id !== userId))
+      
+      alert('✅ Kullanıcı başarıyla silindi!')
+      
+    } catch (error: any) {
+      alert('Silme işlemi sırasında hata: ' + error.message)
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   const exportCSV = () => {
@@ -203,14 +326,20 @@ export default function AdminUsersPage() {
   if (authorized === null)
     return (
       <div className="flex justify-center items-center h-96 text-wb-olive">
-        <ShieldAlert className="animate-pulse mr-2" /> Yetki kontrolü yapılıyor...
+        <div className="text-center">
+          <ShieldAlert className="animate-pulse mx-auto mb-2" size={32} />
+          <p className="text-sm">Yetki kontrolü yapılıyor...</p>
+        </div>
       </div>
     )
 
   if (loading)
     return (
       <div className="flex justify-center items-center h-96 text-wb-olive">
-        <Loader2 className="animate-spin mr-2" /> Kullanıcılar yükleniyor...
+        <div className="text-center">
+          <Loader2 className="animate-spin mx-auto mb-2" size={32} />
+          <p className="text-sm">Kullanıcılar yükleniyor...</p>
+        </div>
       </div>
     )
 
@@ -220,12 +349,14 @@ export default function AdminUsersPage() {
         <Users size={22} /> Tüm Kullanıcılar
       </h1>
 
-      {/* Sayaçlar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      {/* Sayaçlar - GÜNCELLENMİŞ */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
         <StatCard icon={Users} label="Aktif" value={stats.active} color="text-green-600" />
         <StatCard icon={Ban} label="Askıya" value={stats.suspended} color="text-red-600" />
         <StatCard icon={Clock} label="Beklemede" value={stats.pending} color="text-yellow-600" />
         <StatCard icon={Shield} label="Admin" value={stats.admins} color="text-blue-600" />
+        <StatCard icon={ShieldCheck} label="Moderatör" value={stats.moderators} color="text-purple-600" />
+        <StatCard icon={UserX} label="Banlı" value={stats.banned} color="text-red-600" />
         <StatCard icon={UserPlus} label="Toplam" value={stats.total} color="text-wb-olive" />
       </div>
 
@@ -266,7 +397,7 @@ export default function AdminUsersPage() {
           </select>
 
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => loadUsers(true)}
             className="flex items-center gap-1 bg-wb-olive text-white px-3 py-2 rounded-xl text-sm hover:bg-wb-green transition"
           >
             <RefreshCw size={14} /> Yenile
@@ -312,7 +443,7 @@ export default function AdminUsersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3">{u.email}</td>
-                    <td className="px-4 py-3">@{u.username}</td>
+                    <td className="px-4 py-3">@{u.username || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       <StatusBadge status={u.status} />
                     </td>
@@ -378,6 +509,16 @@ export default function AdminUsersPage() {
                               Doğrula
                             </button>
                           )}
+
+                          {/* SİLME BUTONU */}
+                          <button
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="inline-flex items-center text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                            title="Kullanıcıyı Sil"
+                          >
+                            <Trash2 size={12} className="mr-1" />
+                            Sil
+                          </button>
                         </>
                       )}
                     </td>
@@ -444,7 +585,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className={`px-2 py-1 rounded-full text-xs ${map[status] || 'bg-gray-100 text-gray-600'}`}>
-      {status || '—'}
+      {status || 'active'}
     </span>
   )
 }

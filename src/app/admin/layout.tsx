@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import {
   LayoutDashboard,
@@ -47,6 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [admin, setAdmin] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [socialLinks, setSocialLinks] = useState<{ key: string; value: string }[]>([])
+  const router = useRouter()
 
   useEffect(() => {
     ;(async () => {
@@ -54,7 +56,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const user = data?.user
       if (!user) {
         alert('Oturum bulunamadı.')
-        window.location.href = '/'
+        router.push('/login')
         return
       }
 
@@ -64,9 +66,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .eq('id', user.id)
         .single()
 
-      if (!profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
+      if (!profile) {
+        alert('Profil bulunamadı.')
+        router.push('/')
+        return
+      }
+
+      // 🔒 Rol kontrolü: sadece admin veya moderator girebilir
+      if (profile.role !== 'admin' && profile.role !== 'moderator') {
         alert('Yetkisiz erişim.')
-        window.location.href = '/'
+        router.push('/')
+        return
+      }
+
+      // 🧭 Eğer moderator ise, /moderator sayfasına yönlendir
+      if (profile.role === 'moderator' && window.location.pathname.startsWith('/admin')) {
+        router.push('/moderator')
         return
       }
 
@@ -74,7 +89,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       await loadSocialLinks()
       setLoading(false)
     })()
-  }, [])
+  }, [router])
 
   const loadSocialLinks = async () => {
     const { data } = await supabase
@@ -92,6 +107,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
     )
 
+  const isAdmin = admin.role === 'admin'
+  const isModerator = admin.role === 'moderator'
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* 🧭 Sidebar */}
@@ -99,7 +117,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="p-4 border-b">
           <h2 className="text-lg font-bold text-wb-olive flex items-center gap-2">
             <LayoutDashboard size={18} />
-            {admin.role === 'moderator' ? 'Yönetim Paneli' : 'Admin Panel'}
+            {isModerator ? 'Yönetim Paneli' : 'Admin Panel'}
           </h2>
         </div>
 
@@ -112,6 +130,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ]}
           />
 
+          {/* Her iki rol de görebilir */}
           <SidebarSection
             title="Kullanıcı Yönetimi"
             items={[
@@ -130,25 +149,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             ]}
           />
 
-          <SidebarSection
-            title="Finansal İşlemler"
-            items={[
-              { href: '/admin/transactions', label: 'İşlemler', icon: CreditCard },
-              { href: '/admin/payouts', label: 'Ödemeler', icon: DollarSign },
-              { href: '/admin/commissions', label: 'Komisyonlar', icon: PieChart },
-            ]}
-          />
+          {/* 🔒 Yalnızca Admin'e özel */}
+          {isAdmin && (
+            <>
+              <SidebarSection
+                title="Finansal İşlemler"
+                items={[
+                  { href: '/admin/transactions', label: 'İşlemler', icon: CreditCard },
+                  { href: '/admin/payouts', label: 'Ödemeler', icon: DollarSign },
+                  { href: '/admin/commissions', label: 'Komisyonlar', icon: PieChart },
+                ]}
+              />
 
-          <SidebarSection
-            title="Sistem"
-            items={[
-              { href: '/admin/settings/social', label: 'Sosyal Medya', icon: Settings },
-              { href: '/admin/notifications', label: 'Bildirimler', icon: Bell },
-              { href: '/admin/logs', label: 'Loglar', icon: Activity },
-              { href: '/admin/contact', label: 'İletişim Talepleri', icon: Mail },
-              { href: '/admin/backup', label: 'Yedekleme', icon: Database },
-            ]}
-          />
+              <SidebarSection
+                title="Sistem"
+                items={[
+                  { href: '/admin/settings/social', label: 'Sosyal Medya', icon: Settings },
+                  { href: '/admin/notifications', label: 'Bildirimler', icon: Bell },
+                  { href: '/admin/logs', label: 'Loglar', icon: Activity },
+                  { href: '/admin/contact', label: 'İletişim Talepleri', icon: Mail },
+                  { href: '/admin/backup', label: 'Yedekleme', icon: Database },
+                ]}
+              />
+            </>
+          )}
         </nav>
 
         {/* 🔗 Dinamik Sosyal Medya */}
@@ -177,9 +201,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* 🧾 Kullanıcı Bilgisi */}
-        <div className="p-3 border-t text-xs text-gray-400">
-          Giriş: {admin.email}
-        </div>
+        <div className="p-3 border-t text-xs text-gray-400">Giriş: {admin.email}</div>
       </aside>
 
       {/* 📄 Sayfa İçeriği */}
