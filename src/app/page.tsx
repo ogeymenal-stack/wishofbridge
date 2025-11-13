@@ -1,19 +1,22 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
-import {
-  Search,
-  Gift,
-  HeartHandshake,
-  ShoppingCart,
-  Users,
-  Package,
-  Star,
-  ArrowRight,
-  Shield,
-} from 'lucide-react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
+import Image from 'next/image' // ✅ Next.js Image eklendi
+import { supabase } from '@/lib/supabaseClient'
+
+// ✅ DÜZELTİLMİŞ LUCIDE IMPORT'LARI
+import { 
+  Search, 
+  Gift, 
+  HeartHandshake, 
+  ShoppingCart, 
+  Users, 
+  Package, 
+  Star, 
+  ArrowRight, 
+  Shield 
+} from 'lucide-react'
 
 type Category = {
   id: number
@@ -37,11 +40,13 @@ type Listing = {
   } | null
 }
 
+// ✅ Blur placeholder base64 (LCP'yi hızlandırır)
+const blurDataURL = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaUMk6WUdkSqLpO9b2Zc6ySkOpPZUrJIIIzI1mK1k6mPwjzq4Or/9k='
+
 export default function HomePage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [featuredListings, setFeaturedListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtered, setFiltered] = useState<Listing[]>([])
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('Tümü')
   const [minPrice, setMinPrice] = useState('')
@@ -61,10 +66,45 @@ export default function HomePage() {
     helpRequests: 0,
   })
 
-  // 📊 Animasyonlu istatistik artışı
+  // ✅ useMemo ile heavy hesaplamaları cache'le
+  const platformFeatures = useMemo(() => [
+    {
+      icon: Gift,
+      title: 'Hediyeleşme',
+      description: 'Kullanmadığın eşyalarını ihtiyacı olanlarla paylaş',
+      color: 'bg-wb-lavender',
+      link: '/create/gift',
+    },
+    {
+      icon: HeartHandshake,
+      title: 'Yardımlaşma',
+      description: 'Yardıma ihtiyacı olanlara destek ol',
+      color: 'bg-wb-green',
+      link: '/create/help',
+    },
+    {
+      icon: ShoppingCart,
+      title: 'Satış',
+      description: 'İkinci el eşyalarını değerinde sat',
+      color: 'bg-wb-olive',
+      link: '/create/sale',
+    },
+    {
+      icon: Shield,
+      title: 'Güvenli Alışveriş',
+      description: 'Doğrulanmış kullanıcılar ve güvenli ödeme',
+      color: 'bg-wb-blue',
+      link: '/security',
+    },
+  ], [])
+
+  // ✅ Optimize edilmiş animasyonlu sayaç
   useEffect(() => {
-    const duration = 1500
+    if (stats.users === 0 && stats.completed === 0 && stats.helpRequests === 0) return
+    
+    const duration = 1200 // ⚡️ Süreyi kısalttık
     const start = performance.now()
+    let raf = 0
 
     const animate = (time: number) => {
       const progress = Math.min((time - start) / duration, 1)
@@ -73,60 +113,77 @@ export default function HomePage() {
         completed: Math.floor(progress * stats.completed),
         helpRequests: Math.floor(progress * stats.helpRequests),
       })
-      if (progress < 1) requestAnimationFrame(animate)
+      if (progress < 1) raf = requestAnimationFrame(animate)
     }
-    requestAnimationFrame(animate)
+
+    raf = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(raf)
   }, [stats])
 
+  // ✅ OPTİMİZE EDİLMİŞ VERİ YÜKLEME (LCP'yi iyileştirir)
   useEffect(() => {
     async function loadData() {
       setLoading(true)
       try {
-        const [categoriesRes, listingsRes, profilesCount, completedCount, totalPosts, helpCount, reviewAvg] =
-          await Promise.all([
-            supabase.from('categories').select('id,name,slug,description,icon').order('name', { ascending: true }),
-            supabase
-              .from('posts')
-              .select('id,title,description,type,price,image_urls,created_at,profiles(full_name,profile_photo)')
-              .order('created_at', { ascending: false })
-              .limit(8),
-            supabase.from('profiles').select('*', { count: 'exact', head: true }),
-            supabase.from('posts').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
-            supabase.from('posts').select('*', { count: 'exact', head: true }),
-            supabase.from('posts').select('*', { count: 'exact', head: true }).eq('type', 'help'),
-            supabase.rpc('avg_user_review_rating').single(),
-          ])
+        // ⚡️ 1. ÖNCE KRİTİK VERİLER: Kategoriler ve listeler (LCP için)
+        const [categoriesRes, listingsRes] = await Promise.all([
+          supabase
+            .from('categories')
+            .select('id,name,slug,description,icon')
+            .order('name', { ascending: true }),
+          supabase
+            .from('posts')
+            .select('id,title,description,type,price,image_urls,created_at,profiles(full_name,profile_photo)')
+            .order('created_at', { ascending: false })
+            .limit(8),
+        ])
 
         setCategories(categoriesRes.data || [])
-                const listings =
-          listingsRes.data?.map((item: any) => ({
-            ...item,
-            profiles: item.profiles?.[0] || null,
-          })) || []
-
+        
+        const listings = listingsRes.data?.map((item: any) => ({
+          ...item,
+          profiles: Array.isArray(item.profiles) ? item.profiles?.[0] || null : item.profiles || null,
+        })) || []
+        
         setFeaturedListings(listings)
+        setLoading(false) // ⚡️ Kullanıcıyı HEMEN serbest bırak
 
-        const satisfaction =
-          reviewAvg.data && typeof reviewAvg.data === 'number'
-            ? Math.round(reviewAvg.data * 10) / 10
-            : 4.8
+        // ⏳ 2. ARKA PLANDA: İstatistikleri yükle (kritik değil)
+        setTimeout(async () => {
+          try {
+            const [profilesCount, completedCount, totalPosts, helpCount, reviewAvg] = await Promise.all([
+              supabase.from('profiles').select('*', { count: 'exact', head: true }),
+              supabase.from('posts').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+              supabase.from('posts').select('*', { count: 'exact', head: true }),
+              supabase.from('posts').select('*', { count: 'exact', head: true }).eq('type', 'help'),
+              supabase.rpc('avg_user_review_rating').single(),
+            ])
 
-        setStats({
-          users: profilesCount.count || 0,
-          completed: completedCount.count || 0,
-          totalPosts: totalPosts.count || 1,
-          helpRequests: helpCount.count || 0,
-          satisfaction,
-        })
-      } finally {
+            const satisfaction = reviewAvg.data && typeof reviewAvg.data === 'number'
+              ? Math.round(reviewAvg.data * 10) / 10
+              : 4.8
+
+            setStats({
+              users: profilesCount.count || 0,
+              completed: completedCount.count || 0,
+              totalPosts: totalPosts.count || 1,
+              helpRequests: helpCount.count || 0,
+              satisfaction,
+            })
+          } catch (error) {
+            console.log('İstatistikler yüklenirken hata:', error)
+          }
+        }, 1000) // 1 saniye gecikmeli
+      } catch (error) {
+        console.log('Veri yüklenirken hata:', error)
         setLoading(false)
       }
     }
     loadData()
   }, [])
 
-  // 🔍 Filtreleme
-  useEffect(() => {
+  // ✅ useMemo ile filtreleme optimizasyonu
+  const filteredListings = useMemo(() => {
     let filteredData = featuredListings.filter(
       (item) =>
         item.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -148,52 +205,40 @@ export default function HomePage() {
       })
     }
 
-    setFiltered(filteredData)
+    return filteredData
   }, [search, selectedCategory, minPrice, maxPrice, featuredListings])
 
   // Progress bar oranları
   const shareRate = Math.min((stats.completed / stats.totalPosts) * 100, 100)
   const helpRate = Math.min((stats.helpRequests / stats.users) * 100, 100)
 
-  // Platform özellikleri
-  const platformFeatures = [
-    {
-      icon: Gift,
-      title: 'Hediyeleşme',
-      description: 'Kullanmadığın eşyalarını ihtiyacı olanlarla paylaş',
-      color: 'bg-wb-lavender',
-      link: '/create/gift'
-    },
-    {
-      icon: HeartHandshake,
-      title: 'Yardımlaşma',
-      description: 'Yardıma ihtiyacı olanlara destek ol',
-      color: 'bg-wb-green',
-      link: '/create/help'
-    },
-    {
-      icon: ShoppingCart,
-      title: 'Satış',
-      description: 'İkinci el eşyalarını değerinde sat',
-      color: 'bg-wb-olive',
-      link: '/create/sale'
-    },
-    {
-      icon: Shield,
-      title: 'Güvenli Alışveriş',
-      description: 'Doğrulanmış kullanıcılar ve güvenli ödeme',
-      color: 'bg-wb-blue',
-      link: '/security'
-    }
-  ]
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-wb-cream to-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-wb-olive mx-auto"></div>
-          <p className="text-slate-600 mt-4">Wish Of Bridge yükleniyor...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-b from-wb-cream to-white">
+        {/* ⚡️ Geliştirilmiş Skeleton Screen */}
+        <section className="bg-gradient-to-r from-wb-olive to-wb-green text-white py-16 md:py-20">
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="h-12 bg-wb-olive/50 rounded animate-pulse mb-4 mx-auto max-w-2xl"></div>
+            <div className="h-6 bg-wb-olive/50 rounded animate-pulse mb-8 mx-auto max-w-3xl"></div>
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-white/20 rounded-xl p-4 h-20 animate-pulse"></div>
+            </div>
+          </div>
+        </section>
+
+        <section className="py-16 bg-white">
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="text-center">
+                  <div className="w-16 h-16 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
+                  <div className="h-8 bg-gray-200 rounded animate-pulse mb-2 mx-4"></div>
+                  <div className="h-4 bg-gray-200 rounded animate-pulse mx-8"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
     )
   }
@@ -205,14 +250,14 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold mb-6">
-              Paylaşmanın 
+              Paylaşmanın
               <span className="block text-wb-lavender">Yeni Köprüsü</span>
             </h1>
             <p className="text-xl md:text-2xl mb-8 opacity-90 max-w-2xl mx-auto">
-              Wish Of Bridge ile komşuluk ilişkilerini güçlendir, 
+              Wish Of Bridge ile komşuluk ilişkilerini güçlendir,
               ihtiyaç sahiplerine ulaş, fazlalıklarını değerlendir.
             </p>
-            
+
             {/* Arama & Filtreler */}
             <div className="max-w-4xl mx-auto mb-8">
               <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col md:flex-row gap-4 items-center">
@@ -259,15 +304,24 @@ export default function HomePage() {
 
             {/* Hızlı Aksiyon Butonları */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a href="/create/gift" className="bg-wb-lavender hover:bg-wb-lavender/90 text-white px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2">
+              <a
+                href="/create/gift"
+                className="bg-wb-lavender hover:bg-wb-lavender/90 text-white px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2"
+              >
                 <Gift size={20} />
                 Hediyeleş
               </a>
-              <a href="/create/help" className="bg-white text-wb-olive hover:bg-wb-cream px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2">
+              <a
+                href="/create/help"
+                className="bg-white text-wb-olive hover:bg-wb-cream px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2"
+              >
                 <HeartHandshake size={20} />
                 Yardımlaş
               </a>
-              <a href="/create/sale" className="border-2 border-white hover:bg-white/10 px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2">
+              <a
+                href="/create/sale"
+                className="border-2 border-white hover:bg-white/10 px-8 py-4 rounded-xl font-semibold transition flex items-center gap-2"
+              >
                 <ShoppingCart size={20} />
                 Satış Yap
               </a>
@@ -298,9 +352,7 @@ export default function HomePage() {
       <section className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">
-              Keşfetmeye Başla
-            </h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">Keşfetmeye Başla</h2>
             <p className="text-xl text-slate-600 max-w-2xl mx-auto">
               İlgi alanlarına göre kategorileri keşfet ve topluluğumuzdaki paylaşımları gör
             </p>
@@ -342,27 +394,26 @@ export default function HomePage() {
       </section>
 
       {/* Öne Çıkan İlanlar */}
-      {filtered.length > 0 && (
+      {filteredListings.length > 0 && (
         <section className="py-16 bg-wb-cream/50">
           <div className="max-w-6xl mx-auto px-4">
             <div className="text-center mb-12">
-              <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">
-                Yeni Paylaşımlar
-              </h2>
-              <p className="text-xl text-slate-600">
-                Topluluğumuzdaki en yeni paylaşımları keşfet
-              </p>
+              <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">Yeni Paylaşımlar</h2>
+              <p className="text-xl text-slate-600">Topluluğumuzdaki en yeni paylaşımları keşfet</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {filtered.slice(0, 8).map((listing) => (
+              {filteredListings.slice(0, 8).map((listing) => (
                 <ListingCard key={listing.id} listing={listing} />
               ))}
             </div>
 
-            {filtered.length > 8 && (
+            {filteredListings.length > 8 && (
               <div className="text-center mt-8">
-                <a href="/discover" className="inline-flex items-center gap-2 bg-wb-olive text-white px-6 py-3 rounded-xl hover:bg-wb-olive/90 transition font-semibold">
+                <a
+                  href="/discover"
+                  className="inline-flex items-center gap-2 bg-wb-olive text-white px-6 py-3 rounded-xl hover:bg-wb-olive/90 transition font-semibold"
+                >
                   Tümünü Gör
                   <ArrowRight size={20} />
                 </a>
@@ -376,9 +427,7 @@ export default function HomePage() {
       <section className="py-16">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">
-              Neden Wish Of Bridge?
-            </h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-wb-olive mb-4">Neden Wish Of Bridge?</h2>
             <p className="text-xl text-slate-600 max-w-2xl mx-auto">
               Topluluk odaklı platformumuzun benzersiz avantajlarından yararlanın
             </p>
@@ -393,7 +442,9 @@ export default function HomePage() {
                   href={feature.link}
                   className="bg-white rounded-xl shadow-sm border border-wb-olive/10 p-6 text-center hover:shadow-md transition group"
                 >
-                  <div className={`${feature.color} w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition`}>
+                  <div
+                    className={`${feature.color} w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition`}
+                  >
                     <Icon className="text-white" size={32} />
                   </div>
                   <h3 className="font-semibold text-wb-olive mb-2">{feature.title}</h3>
@@ -408,17 +459,21 @@ export default function HomePage() {
       {/* CTA Section */}
       <section className="py-16 bg-wb-olive text-white">
         <div className="max-w-6xl mx-auto px-4 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Topluluğumuza Katılmaya Hazır mısın?
-          </h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">Topluluğumuza Katılmaya Hazır mısın?</h2>
           <p className="text-xl mb-8 opacity-90 max-w-2xl mx-auto">
             Binlerce kullanıcının arasına katıl ve paylaşımın gücünü keşfet
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a href="/login" className="bg-white text-wb-olive px-8 py-4 rounded-xl font-semibold hover:bg-wb-cream transition">
+            <a
+              href="/login"
+              className="bg-white text-wb-olive px-8 py-4 rounded-xl font-semibold hover:bg-wb-cream transition"
+            >
               Hemen Başla
             </a>
-            <a href="/about" className="border-2 border-white px-8 py-4 rounded-xl font-semibold hover:bg-white/10 transition">
+            <a
+              href="/about"
+              className="border-2 border-white px-8 py-4 rounded-xl font-semibold hover:bg-white/10 transition"
+            >
               Daha Fazla Bilgi
             </a>
           </div>
@@ -428,7 +483,7 @@ export default function HomePage() {
   )
 }
 
-/* --- COMPONENTS --- */
+/* --- OPTIMIZE EDİLMİŞ COMPONENTS --- */
 
 function StatBox({ icon: Icon, value, label }: any) {
   return (
@@ -442,14 +497,20 @@ function StatBox({ icon: Icon, value, label }: any) {
   )
 }
 
+// ✅ OPTİMİZE EDİLMİŞ ListingCard (Next.js Image ile)
 function ListingCard({ listing }: { listing: Listing }) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-wb-olive/10 overflow-hidden hover:shadow-md transition">
       {listing.image_urls && listing.image_urls.length > 0 ? (
-        <img
-          src={listing.image_urls[0]}
-          alt={listing.title}
+        <Image 
+          src={listing.image_urls[0]} 
+          alt={listing.title} 
+          width={300}
+          height={192}
           className="w-full h-48 object-cover"
+          placeholder="blur"
+          blurDataURL={blurDataURL}
+          priority={false} // ⚡️ Lazy loading aktif
         />
       ) : (
         <div className="w-full h-48 bg-wb-cream flex items-center justify-center">
@@ -458,37 +519,32 @@ function ListingCard({ listing }: { listing: Listing }) {
       )}
       <div className="p-4">
         <div className="flex items-center gap-2 mb-2">
-          <div className={`px-2 py-1 rounded text-xs font-semibold ${
-            listing.type === 'gift' ? 'bg-wb-lavender text-white' :
-            listing.type === 'help' ? 'bg-wb-green text-white' :
-            'bg-wb-olive text-white'
-          }`}>
-            {listing.type === 'gift' ? '🎁 Hediye' : 
-             listing.type === 'help' ? '💞 Yardım' : '🛒 Satış'}
+          <div
+            className={`px-2 py-1 rounded text-xs font-semibold ${
+              listing.type === 'gift'
+                ? 'bg-wb-lavender text-white'
+                : listing.type === 'help'
+                ? 'bg-wb-green text-white'
+                : 'bg-wb-olive text-white'
+            }`}
+          >
+            {listing.type === 'gift' ? '🎁 Hediye' : listing.type === 'help' ? '💞 Yardım' : '🛒 Satış'}
           </div>
         </div>
-        <h3 className="font-semibold text-wb-olive mb-2 line-clamp-2">
-          {listing.title}
-        </h3>
-        <p className="text-slate-600 text-sm line-clamp-2 mb-3">
-          {listing.description}
-        </p>
+        <h3 className="font-semibold text-wb-olive mb-2 line-clamp-2">{listing.title}</h3>
+        <p className="text-slate-600 text-sm line-clamp-2 mb-3">{listing.description}</p>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img
+            <Image
               src={listing.profiles?.profile_photo || '/default-avatar.png'}
               alt={listing.profiles?.full_name || 'Kullanıcı'}
+              width={24}
+              height={24}
               className="w-6 h-6 rounded-full object-cover"
             />
-            <span className="text-xs text-slate-500">
-              {listing.profiles?.full_name || 'Kullanıcı'}
-            </span>
+            <span className="text-xs text-slate-500">{listing.profiles?.full_name || 'Kullanıcı'}</span>
           </div>
-          {listing.price && (
-            <span className="text-wb-green font-bold text-sm">
-              {listing.price} ₺
-            </span>
-          )}
+          {listing.price && <span className="text-wb-green font-bold text-sm">{listing.price} ₺</span>}
         </div>
       </div>
     </div>
@@ -500,10 +556,7 @@ function Progress({ label, value, color }: any) {
     <div>
       <p className="text-sm text-slate-600 mb-2">{label}</p>
       <div className="w-full h-3 bg-wb-olive/10 rounded-full overflow-hidden">
-        <div
-          className={`${color} h-full transition-all duration-700`}
-          style={{ width: `${value.toFixed(1)}%` }}
-        ></div>
+        <div className={`${color} h-full transition-all duration-700`} style={{ width: `${value.toFixed(1)}%` }} />
       </div>
       <p className="text-xs text-slate-500 mt-1 text-right">{value.toFixed(1)}%</p>
     </div>

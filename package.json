@@ -4,14 +4,29 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:optimized": "set NODE_OPTIONS=--max-old-space-size=4096 && next dev",
     "build": "next build",
+    "build:analyze": "set ANALYZE=true && next build",
+    "build:prod": "set NODE_ENV=production && next build",
     "start": "next start",
-    "lint": "eslint",
+    "start:prod": "set NODE_ENV=production && next start",
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
-    "type-check:watch": "tsc --noEmit --watch"
+    "type-check:watch": "tsc --noEmit --watch",
+    "analyze": "set ANALYZE=true && next build",
+    "analyze:open": "set ANALYZE=true && next build && start .next\\analyze\\client.html",
+    "analyze:all": "set ANALYZE=true && next build --webpack",
+    "perf:test": "npx lighthouse http://localhost:3000 --view --preset=desktop",
+    "perf:mobile": "npx lighthouse http://localhost:3000 --view --preset=mobile",
+    "clean": "rd /s /q .next 2>nul || true",
+    "clean:install": "npm run clean && rd /s /q node_modules 2>nul || true && npm install"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.80.0",
+    "@vercel/analytics": "^1.5.0",
+    "critters": "^0.0.23",
     "lucide-react": "^0.553.0",
     "next": "16.0.1",
     "react": "19.2.0",
@@ -20,15 +35,34 @@
     "resend": "^6.4.2"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.0.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-compiler": "1.0.0",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
+    "lighthouse": "^13.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.13",
     "typescript": "^5"
+  },
+  "browserslist": {
+    "production": [
+      ">0.3%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }

@@ -4,20 +4,21 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/context/AuthContext'
-import {
-  Gift,
-  Heart,
-  ShoppingCart,
-  MessageCircle,
-  User,
-  LogOut,
-  Menu,
-  X,
-  Plus,
-  Bell,
-  Shield,
-  Home,
-  Info,
+
+// ⚡️ Lucide ikonlarını tekil import
+import { 
+  Gift, 
+  Heart, 
+  ShoppingCart, 
+  MessageCircle, 
+  User, 
+  LogOut, 
+  Menu, 
+  X, 
+  Plus, 
+  Shield, 
+  Home, 
+  Info 
 } from 'lucide-react'
 
 type NavigationItem = {
@@ -42,32 +43,20 @@ export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [imgError, setImgError] = useState(false)
 
-  // Mesaj sayacı (backend kurulduğunda bağlarız – şimdilik 0 tutalım)
   const [unreadCount] = useState(0)
 
-  // Rol bazlı panel metni & linki
   const panelLabel =
-  role === 'admin'
-    ? 'Admin Panel'
-    : role === 'moderator'
-    ? 'Moderatör Paneli'
-    : 'Profilim'
+    role === 'admin' ? 'Admin Panel' : role === 'moderator' ? 'Moderatör Paneli' : 'Profilim'
 
-const panelHref =
-  role === 'admin'
-    ? '/admin'
-    : role === 'moderator'
-    ? '/moderator'
-    : `/profile/${user?.id}`
+  const panelHref =
+    role === 'admin' ? '/admin' : role === 'moderator' ? '/moderator' : `/profile/${user?.id}`
 
- const displayName =
-  profile?.first_name && profile?.last_name 
-    ? `${profile.first_name} ${profile.last_name}`
-    : profile?.full_name || 
-      user?.email?.split('@')[0] || 
-      'Kullanıcı'
+  const displayName =
+    (profile as any)?.first_name && (profile as any)?.last_name
+      ? `${(profile as any).first_name} ${(profile as any).last_name}`
+      : profile?.full_name || user?.email?.split('@')[0] || 'Kullanıcı'
 
-  // Menü kapatma (route değişimlerinde veya logo tıklanınca)
+  // Menü kapatma (route hash değişimleri vb.)
   useEffect(() => {
     const close = () => {
       setMenuOpen(false)
@@ -104,9 +93,7 @@ const panelHref =
               <div className="w-10 h-10 flex items-center justify-center rounded-full bg-wb-olive text-white font-bold">
                 WB
               </div>
-              <span className="text-wb-olive font-semibold text-lg hidden sm:block">
-                Wish Of Bridge
-              </span>
+              <span className="text-wb-olive font-semibold text-lg hidden sm:block">Wish Of Bridge</span>
             </div>
           )}
         </Link>
@@ -191,10 +178,7 @@ const panelHref =
             </div>
           ) : (
             <div className="flex items-center space-x-4">
-              <Link
-                href="/login"
-                className="text-sm font-medium text-wb-olive hover:text-wb-olive/80 transition-colors"
-              >
+              <Link href="/login" className="text-sm font-medium text-wb-olive hover:text-wb-olive/80 transition-colors">
                 Giriş Yap
               </Link>
               <Link

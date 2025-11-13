@@ -45,7 +45,7 @@ export default function AdminUsersPage() {
     ;(async () => {
       const { data } = await supabase.auth.getUser()
       const user = data?.user
-      
+
       if (!user) {
         window.location.href = '/'
         return
@@ -78,7 +78,7 @@ export default function AdminUsersPage() {
           .from('profiles')
           .select('*')
           .order('created_at', { ascending: false })
-        
+
         if (!error && data) {
           setUsers(data)
         }
@@ -91,47 +91,20 @@ export default function AdminUsersPage() {
 
     loadUsers()
 
-    // Real-time subscription - SADECE INSERT ve UPDATE için
+    // 🔄 Real-time listener
     const channel = supabase
       .channel('profiles-changes')
-      .on(
-        'postgres_changes',
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'profiles' 
-        },
-        (payload) => {
-          console.log('Yeni kullanıcı eklendi:', payload)
-          setUsers(prev => [payload.new, ...prev])
-        }
-      )
-      .on(
-        'postgres_changes',
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'profiles' 
-        },
-        (payload) => {
-          console.log('Kullanıcı güncellendi:', payload)
-          setUsers(prev => prev.map(user => 
-            user.id === payload.old.id ? { ...user, ...payload.new } : user
-          ))
-        }
-      )
-      .on(
-        'postgres_changes',
-        { 
-          event: 'DELETE', 
-          schema: 'public', 
-          table: 'profiles' 
-        },
-        (payload) => {
-          console.log('Kullanıcı silindi:', payload)
-          setUsers(prev => prev.filter(user => user.id !== payload.old.id))
-        }
-      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, (payload) => {
+        setUsers((prev) => [payload.new, ...prev])
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload) => {
+        setUsers((prev) =>
+          prev.map((user) => (user.id === payload.old.id ? { ...user, ...payload.new } : user))
+        )
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'profiles' }, (payload) => {
+        setUsers((prev) => prev.filter((user) => user.id !== payload.old.id))
+      })
       .subscribe()
 
     return () => {
@@ -148,7 +121,7 @@ export default function AdminUsersPage() {
     const admins = users.filter((u) => u.role === 'admin').length
     const moderators = users.filter((u) => u.role === 'moderator').length
     const banned = users.filter((u) => u.is_banned).length
-    
+
     return { total, active, suspended, pending, admins, moderators, banned }
   }, [users])
 
@@ -171,29 +144,24 @@ export default function AdminUsersPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageData = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 🔄 Filtre değişince sayfayı sıfırla
   useEffect(() => setPage(1), [searchTerm, statusFilter, roleFilter])
 
-  // ⚙️ ROL DEĞİŞTİRME - GÜNCELLENDİ
+  // ⚙️ ROL DEĞİŞTİRME (güvenli .select ile)
   const handleRoleChange = async (userId: string, newRole: string) => {
     setActionLoading(userId)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ role: newRole })
         .eq('id', userId)
+        .select()
 
-      if (error) {
-        alert('Rol değiştirilemedi: ' + error.message)
+      if (error || !data?.length) {
+        alert('Rol değiştirilemedi: ' + (error?.message || 'Bilinmeyen hata'))
         return
       }
 
-      // Local state'i güncelle
-      setUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, role: newRole } : user
-      ))
-
-      console.log(`Kullanıcı rolü değiştirildi: ${userId} -> ${newRole}`)
+      setUsers((prev) => prev.map((user) => (user.id === userId ? { ...user, role: newRole } : user)))
     } catch (err: any) {
       alert('Rol değiştirme hatası: ' + err.message)
     } finally {
@@ -201,55 +169,51 @@ export default function AdminUsersPage() {
     }
   }
 
-  // ⛔ BAN İŞLEMİ - GÜNCELLENDİ
+  // ⛔ BAN İŞLEMİ (güvenli)
   const handleBan = async (userId: string, currentBanStatus: boolean) => {
     setActionLoading(userId)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ is_banned: !currentBanStatus })
         .eq('id', userId)
+        .select()
 
-      if (error) {
-        alert('Ban işlemi hatası: ' + error.message)
+      if (error || !data?.length) {
+        alert('Ban işlemi başarısız: ' + (error?.message || 'Policy hatası olabilir.'))
         return
       }
 
-      // Local state'i güncelle
-      setUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, is_banned: !currentBanStatus } : user
-      ))
-
-      console.log(`Kullanıcı ban durumu değiştirildi: ${userId} -> ${!currentBanStatus}`)
+      setUsers((prev) =>
+        prev.map((user) => (user.id === userId ? { ...user, is_banned: !currentBanStatus } : user))
+      )
     } catch (err: any) {
-      alert('Ban işlemi hatası: ' + err.message)
+      alert('Ban hatası: ' + err.message)
     } finally {
       setActionLoading(null)
     }
   }
 
-  // 🧩 ASKIYA ALMA - GÜNCELLENDİ
+  // 🧩 ASKIYA ALMA (güvenli)
   const handleSuspend = async (userId: string, currentStatus: string) => {
     setActionLoading(userId)
     try {
       const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended'
-      
-      const { error } = await supabase
+
+      const { data, error } = await supabase
         .from('profiles')
         .update({ status: newStatus })
         .eq('id', userId)
+        .select()
 
-      if (error) {
-        alert('Askıya alma hatası: ' + error.message)
+      if (error || !data?.length) {
+        alert('Askıya alma başarısız: ' + (error?.message || 'Policy hatası olabilir.'))
         return
       }
 
-      // Local state'i güncelle
-      setUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, status: newStatus } : user
-      ))
-
-      console.log(`Kullanıcı durumu değiştirildi: ${userId} -> ${newStatus}`)
+      setUsers((prev) =>
+        prev.map((user) => (user.id === userId ? { ...user, status: newStatus } : user))
+      )
     } catch (err: any) {
       alert('Askıya alma hatası: ' + err.message)
     } finally {
@@ -257,26 +221,26 @@ export default function AdminUsersPage() {
     }
   }
 
-  // ✅ DOĞRULAMA - GÜNCELLENDİ
+  // ✅ DOĞRULAMA (güvenli)
   const handleVerify = async (userId: string) => {
     setActionLoading(userId)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ verification_badges: ['Doğrulanmış'] })
         .eq('id', userId)
+        .select()
 
-      if (error) {
-        alert('Doğrulama hatası: ' + error.message)
+      if (error || !data?.length) {
+        alert('Doğrulama hatası: ' + (error?.message || 'Policy hatası olabilir.'))
         return
       }
 
-      // Local state'i güncelle
-      setUsers(prev => prev.map(user => 
-        user.id === userId ? { ...user, verification_badges: ['Doğrulanmış'] } : user
-      ))
-
-      console.log(`Kullanıcı doğrulandı: ${userId}`)
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.id === userId ? { ...user, verification_badges: ['Doğrulanmış'] } : user
+        )
+      )
     } catch (err: any) {
       alert('Doğrulama hatası: ' + err.message)
     } finally {
@@ -284,64 +248,40 @@ export default function AdminUsersPage() {
     }
   }
 
-  // 🗑️ KULLANICI SİLME - GÜNCELLENDİ
+  // 🗑️ KULLANICI SİLME (güvenli)
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!')) {
-      return
-    }
+    if (!confirm('Bu kullanıcıyı silmek istediğinizden emin misiniz?')) return
 
     setActionLoading(userId)
     try {
-      // 1. Önce kullanıcının ilanlarını sil
-      const { error: postsError } = await supabase
-        .from('posts')
-        .delete()
-        .eq('user_id', userId)
+      await supabase.from('posts').delete().eq('user_id', userId)
 
-      if (postsError) {
-        console.warn('Kullanıcı ilanları silinemedi:', postsError)
-      }
-
-      // 2. Kullanıcıyı profiles tablosundan sil
-      const { error: profileError } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .delete()
         .eq('id', userId)
+        .select()
 
-      if (profileError) {
-        alert('Kullanıcı silinemedi: ' + profileError.message)
+      if (error || !data?.length) {
+        alert('Kullanıcı silinemedi: ' + (error?.message || 'Policy veya yetki hatası.'))
         return
       }
 
-      // Local state'den kaldır (real-time subscription da zaten tetiklenecek)
-      setUsers(prev => prev.filter(user => user.id !== userId))
-      
+      setUsers((prev) => prev.filter((u) => u.id !== userId))
       alert('✅ Kullanıcı başarıyla silindi!')
-      
-    } catch (error: any) {
-      alert('Silme işlemi sırasında hata: ' + error.message)
+    } catch (err: any) {
+      alert('Silme hatası: ' + err.message)
     } finally {
       setActionLoading(null)
     }
   }
 
-  // 📥 MANUEL YENİLEME
+  // 📥 Manuel yenileme
   const handleRefresh = async () => {
     setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (!error && data) {
-        setUsers(data)
-      }
-    } catch (err) {
-      console.error('Yenileme hatası:', err)
-    } finally {
-      setLoading(false)
-    }
+    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
+    if (!error && data) setUsers(data)
+    setLoading(false)
   }
 
   // 📊 CSV Export
@@ -368,23 +308,18 @@ export default function AdminUsersPage() {
     document.body.removeChild(link)
   }
 
+  // 🧱 Loading & yetki
   if (authorized === null)
     return (
       <div className="flex justify-center items-center h-96 text-wb-olive">
-        <div className="text-center">
-          <ShieldAlert className="animate-pulse mx-auto mb-2" size={32} />
-          <p className="text-sm">Yetki kontrolü yapılıyor...</p>
-        </div>
+        <ShieldAlert className="animate-pulse mr-2" size={32} /> Yetki kontrolü yapılıyor...
       </div>
     )
 
   if (loading)
     return (
       <div className="flex justify-center items-center h-96 text-wb-olive">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto mb-2" size={32} />
-          <p className="text-sm">Kullanıcılar yükleniyor...</p>
-        </div>
+        <Loader2 className="animate-spin mr-2" /> Kullanıcılar yükleniyor...
       </div>
     )
 
@@ -508,7 +443,6 @@ export default function AdminUsersPage() {
                         <Loader2 className="animate-spin inline text-wb-olive" size={14} />
                       ) : (
                         <>
-                          {/* Askıya Al / Aktif Et */}
                           <button
                             onClick={() => handleSuspend(user.id, user.status)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
@@ -517,7 +451,6 @@ export default function AdminUsersPage() {
                             {user.status === 'suspended' ? 'Aktif Et' : 'Askıya Al'}
                           </button>
 
-                          {/* Ban / Ban Kaldır */}
                           <button
                             onClick={() => handleBan(user.id, user.is_banned)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
@@ -526,12 +459,14 @@ export default function AdminUsersPage() {
                             {user.is_banned ? 'Ban Kaldır' : 'Banla'}
                           </button>
 
-                          {/* Rol Değiştir */}
                           <button
                             onClick={() => {
-                              const newRole = 
-                                user.role === 'user' ? 'moderator' :
-                                user.role === 'moderator' ? 'admin' : 'user'
+                              const newRole =
+                                user.role === 'user'
+                                  ? 'moderator'
+                                  : user.role === 'moderator'
+                                  ? 'admin'
+                                  : 'user'
                               handleRoleChange(user.id, newRole)
                             }}
                             className="inline-flex items-center text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200"
@@ -540,7 +475,6 @@ export default function AdminUsersPage() {
                             Rol Değiştir
                           </button>
 
-                          {/* Doğrula */}
                           {!user.verification_badges?.includes('Doğrulanmış') && (
                             <button
                               onClick={() => handleVerify(user.id)}
@@ -551,7 +485,6 @@ export default function AdminUsersPage() {
                             </button>
                           )}
 
-                          {/* Sil */}
                           <button
                             onClick={() => handleDeleteUser(user.id)}
                             className="inline-flex items-center text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
@@ -625,7 +558,9 @@ function StatusBadge({ status }: { status: string }) {
     pending: 'bg-yellow-100 text-yellow-700',
   }
   return (
-    <span className={`px-2 py-1 rounded-full text-xs ${map[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span
+      className={`px-2 py-1 rounded-full text-xs ${map[status] || 'bg-gray-100 text-gray-600'}`}
+    >
       {status || 'active'}
     </span>
   )

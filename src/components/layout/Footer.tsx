@@ -3,21 +3,18 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
-import {
-  Facebook,
-  Instagram,
-  Twitter,
-  Music2,
-  Youtube,
-  Linkedin,
-  Mail,
-} from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// ⚡️ Tekil ikon import
+import { 
+  Facebook, 
+  Instagram, 
+  Twitter, 
+  Music2, 
+  Youtube, 
+  Linkedin, 
+  Mail 
+} from 'lucide-react'
 
 const iconMap: Record<string, any> = {
   facebook: Facebook,
@@ -48,8 +45,8 @@ export default function Footer() {
     if (data) {
       const social = data.filter((d) => d.is_active && iconMap[d.key])
       const contactItem = data.find((d) => d.key === 'contact')
-      setSocials(social)
-      if (contactItem?.value) setContact(contactItem.value)
+      setSocials(social as any)
+      if (contactItem?.value) setContact(contactItem.value as string)
     }
     setLoading(false)
   }
@@ -70,7 +67,7 @@ export default function Footer() {
             />
           </div>
           <p className="text-sm text-slate-600 mb-3 leading-relaxed">
-            Paylaşmanın, yardımlaşmanın ve hediyeleşmenin köprüsü.  
+            Paylaşmanın, yardımlaşmanın ve hediyeleşmenin köprüsü.
             Topluluk odaklı sosyal–ticaret platformu.
           </p>
 

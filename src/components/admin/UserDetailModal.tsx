@@ -33,12 +33,14 @@ export default function UserDetailModal({ userId, onClose }: Props) {
         .select('*')
         .eq('id', userId)
         .single()
+
       const { data: posts } = await supabase
         .from('posts')
         .select('id,title,type,status,created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(5)
+
       setProfile(p)
       setRecentPosts(posts || [])
       setLoading(false)
@@ -48,34 +50,49 @@ export default function UserDetailModal({ userId, onClose }: Props) {
   const saveProfile = async () => {
     if (!profile) return
     setSaving(true)
-    const updates = {
-      full_name: profile.full_name,
-      email: profile.email,
-      role: profile.role,
-      status: profile.status,
-    }
 
-    const { error } = await supabase.from('profiles').update(updates).eq('id', profile.id)
+    try {
+      const updates = {
+        full_name: profile.full_name?.trim() || null,
+        email: profile.email?.trim() || null,
+        role: profile.role || 'user',
+        status: profile.status || 'active',
+        updated_at: new Date().toISOString(),
+      }
 
-    // log ekle
-    if (!error) {
+      console.log('📤 Gönderilen updates:', updates)
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', profile.id)
+        .select()
+
+      if (error || !data || data.length === 0) {
+        console.error('❌ Güncelleme başarısız:', error)
+        alert('Profil güncellenemedi. Yetki veya policy sorunu olabilir.')
+        setSaving(false)
+        return
+      }
+
       await supabase.from('admin_activity_log').insert([
         {
           admin_id: adminUser?.id,
           action: 'update_profile',
           target_type: 'user',
           target_id: profile.id,
-          details: {
-            updates,
-          },
+          details: updates,
+          created_at: new Date().toISOString(),
         },
       ])
-      alert('✅ Profil ve log kaydedildi.')
-    } else {
-      alert('Hata: ' + error.message)
-    }
 
-    setSaving(false)
+      alert('✅ Profil başarıyla güncellendi!')
+    } catch (err: any) {
+      console.error('💥 Hata:', err)
+      alert('Beklenmeyen hata: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!userId) return null
